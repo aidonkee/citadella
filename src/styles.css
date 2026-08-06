@@ -1,0 +1,185 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap');
+@import "tailwindcss" source(none);
+@source "../src";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Share Tech Mono', monospace;
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.975 0.018 290);
+  --foreground: oklch(0.20 0.04 285);
+  --card: oklch(0.995 0.01 290 / 92%);
+  --card-foreground: oklch(0.20 0.04 285);
+  --popover: oklch(0.995 0.01 290 / 95%);
+  --popover-foreground: oklch(0.20 0.04 285);
+  --primary: oklch(0.60 0.23 288);
+  --primary-foreground: oklch(0.99 0.005 290);
+  --secondary: oklch(0.93 0.035 290 / 85%);
+  --secondary-foreground: oklch(0.28 0.06 288);
+  --muted: oklch(0.92 0.025 290 / 80%);
+  --muted-foreground: oklch(0.50 0.04 285);
+  --accent: oklch(0.86 0.08 295 / 85%);
+  --accent-foreground: oklch(0.22 0.06 288);
+  --destructive: oklch(0.60 0.23 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.60 0.23 288 / 35%);
+  --input: oklch(0.60 0.23 288 / 30%);
+  --ring: oklch(0.60 0.23 288);
+  --chart-1: oklch(0.60 0.23 288);
+  --chart-2: oklch(0.68 0.18 310);
+  --chart-3: oklch(0.72 0.16 260);
+  --chart-4: oklch(0.65 0.20 330);
+  --chart-5: oklch(0.75 0.15 240);
+  --sidebar: oklch(0.985 0.015 290 / 90%);
+  --sidebar-foreground: oklch(0.22 0.05 285);
+  --sidebar-primary: oklch(0.60 0.23 288);
+  --sidebar-primary-foreground: oklch(0.99 0.005 290);
+  --sidebar-accent: oklch(0.92 0.04 290 / 85%);
+  --sidebar-accent-foreground: oklch(0.22 0.05 285);
+  --sidebar-border: oklch(0.60 0.23 288 / 35%);
+  --sidebar-ring: oklch(0.60 0.23 288);
+}
+
+.dark {
+  --radius: 0.75rem;
+  --background: oklch(0.12 0.045 288);
+  --foreground: oklch(0.97 0.015 290);
+  --card: oklch(0.16 0.05 288 / 88%);
+  --card-foreground: oklch(0.97 0.015 290);
+  --popover: oklch(0.15 0.05 288 / 95%);
+  --popover-foreground: oklch(0.97 0.015 290);
+  --primary: oklch(0.76 0.22 288);
+  --primary-foreground: oklch(0.14 0.05 288);
+  --secondary: oklch(0.24 0.06 288 / 80%);
+  --secondary-foreground: oklch(0.95 0.02 290);
+  --muted: oklch(0.22 0.05 288 / 75%);
+  --muted-foreground: oklch(0.72 0.05 288);
+  --accent: oklch(0.32 0.09 298 / 82%);
+  --accent-foreground: oklch(0.98 0.015 290);
+  --destructive: oklch(0.68 0.22 24);
+  --destructive-foreground: oklch(0.98 0.01 290);
+  --border: oklch(0.76 0.22 288 / 40%);
+  --input: oklch(0.76 0.22 288 / 35%);
+  --ring: oklch(0.76 0.22 288);
+  --chart-1: oklch(0.76 0.22 288);
+  --chart-2: oklch(0.72 0.19 315);
+  --chart-3: oklch(0.68 0.18 260);
+  --chart-4: oklch(0.78 0.20 335);
+  --chart-5: oklch(0.80 0.16 245);
+  --sidebar: oklch(0.14 0.05 288 / 90%);
+  --sidebar-foreground: oklch(0.95 0.02 290);
+  --sidebar-primary: oklch(0.76 0.22 288);
+  --sidebar-primary-foreground: oklch(0.14 0.05 288);
+  --sidebar-accent: oklch(0.24 0.06 288 / 80%);
+  --sidebar-accent-foreground: oklch(0.97 0.015 290);
+  --sidebar-border: oklch(0.76 0.22 288 / 40%);
+  --sidebar-ring: oklch(0.76 0.22 288);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    min-width: 320px;
+    font-family: var(--font-sans);
+    letter-spacing: -0.02em;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 50%, transparent);
+  }
+}
+
+@utility glass-panel {
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(20px);
+}
+
+@utility glass-nav {
+  background: color-mix(in oklab, var(--sidebar) 92%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(20px);
+}
+
+@utility liquid-card {
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(20px);
+}
+
+@utility cyber-chamfer {
+  clip-path: polygon(
+    0 0, 
+    calc(100% - 12px) 0, 
+    100% 12px, 
+    100% 100%, 
+    12px 100%, 
+    0 calc(100% - 12px)
+  );
+}
+
+@utility cyber-badge {
+  clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px));
+}
+
+@utility soft-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
