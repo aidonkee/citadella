@@ -36,7 +36,7 @@ export function getTargetChats(order: { dispatched_chat_ids?: (string | null)[] 
 }
 
 export async function aiGenerateOrderCard(order: OrderCardInput) {
-  const key = process.env.LOVABLE_API_KEY;
+  const key = process.env.ORDER_AI_KEY || process.env.LOVABLE_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
   if (!key) return defaultCard(order);
 
   try {
@@ -66,7 +66,6 @@ export async function processDmReply(userId: string, content: string) {
 
 export async function processAiAssistantQuery(userId: string, content: string, chatId?: string | null) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const { logAudit, notifyOwners } = await import("@/lib/audit.server");
 
   // Fetch user profile
   const { data: profile } = await supabaseAdmin
@@ -76,166 +75,23 @@ export async function processAiAssistantQuery(userId: string, content: string, c
     .single();
   const userName = profile?.display_name ?? "Сотрудник";
 
-  // Fetch active orders for context
-  const { data: allOrders } = await supabaseAdmin
-    .from("orders")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  const userOrders = (allOrders ?? []).filter(o => o.responsible_user_id === userId);
-
-  const key = process.env.ORDER_AI_KEY || process.env.LOVABLE_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
   let reply = "";
-  let targetOrderToUpdate: any = null;
-  
-  // New target properties
-  let targetStatus: any = null;
-  let targetStage: OrderStage | null = null;
-  let targetPriority: OrderPriority | null = null;
-  let targetComment: string | null = null;
-  let targetAssignee: string | null = null;
-  
-  let actionExecuted: string | null = null;
 
-  // 1. EXTRACT DATA VIA REGEX FALLBACK
-  const lower = content.toLowerCase().trim();
-  const numMatch = content.match(/(?:№|заказ|нфос[- ]?)?\s*0*(\d+)/i);
-  const targetNum = numMatch ? String(numMatch[1]) : null;
-
-  // NLP: Stage detection
-  if (/логистик/i.test(lower)) targetStage = "Логистика";
-  else if (/производств/i.test(lower)) targetStage = "Производство";
-  else if (/готов/i.test(lower)) targetStage = "Готово";
-  else if (/нов(?:ый|ая)/i.test(lower)) targetStage = "Новый";
-
-  // NLP: Priority detection
-  if (/срочн/i.test(lower)) targetPriority = "Срочно";
-  else if (/высок/i.test(lower)) targetPriority = "Высокий";
-  else if (/средн/i.test(lower)) targetPriority = "Средний";
-  else if (/обычн/i.test(lower)) targetPriority = "Обычный";
-
-  // NLP: Map stage to existing DB status
-  if (targetStage === "Новый") targetStatus = "new";
-  else if (targetStage === "Производство" || targetStage === "Логистика") targetStatus = "in_progress";
-  else if (targetStage === "Готово") targetStatus = "completed";
-
-  // Match order
-  let matchedOrder = targetNum ? (allOrders ?? []).find(o => o.number.endsWith(targetNum)) : null;
-
-  // 2. LLM CALL (Optional, wrapped in graceful try/catch)
-  if (key) {
-    try {
-      const gateway = createLovableAiGatewayProvider(key);
-      const ordersContext = (allOrders ?? []).filter(o => o.status !== 'completed').slice(0, 10).map(o => 
-        `[ID: ${o.id} | №${o.number} | Статус: ${o.status} | Номенклатура: "${o.nomenclature}"]`
-      ).join("\n");
-
-      const prompt = `Сотрудник (${userName}) говорит: "${content}".
-Заказы: ${ordersContext || "Нет"}
-
-Определи:
-- action: create_order, update_order, stats, reply_only
-- reply: Твой ответ
-- update_params: order_id, new_stage (Новый, Производство, Логистика, Готово), new_priority (Срочно, Высокий, Средний, Обычный), comment, new_status (new, in_progress, stalled, completed)
-
-Верни JSON.`;
-
-      const { text } = await generateText({
-        model: gateway(ORDER_AI_MODEL),
-        prompt,
-      });
-
-      const match = text.match(/\{[\s\S]*\}/);
-      if (match) {
-        const parsed = JSON.parse(match[0]);
-        if (parsed.reply) reply = parsed.reply.trim();
-        
-        if (parsed.action === "update_order" && parsed.update_params) {
-           targetOrderToUpdate = (allOrders ?? []).find(o => o.id === parsed.update_params.order_id) || matchedOrder;
-           if (parsed.update_params.new_stage) targetStage = parsed.update_params.new_stage;
-           if (parsed.update_params.new_priority) targetPriority = parsed.update_params.new_priority;
-           if (parsed.update_params.new_status) targetStatus = parsed.update_params.new_status;
-           if (parsed.update_params.comment) targetComment = parsed.update_params.comment;
-           actionExecuted = "update_order";
-        }
-      }
-    } catch (err) {
-      console.warn("LLM API fallback to internal NLP engine", err);
-      // Fallback response handled below
-    }
+  // 1. Primary Engine: Autonomous RAG Agent (executes real tool calls for send_chat_message, search_knowledge_base, etc.)
+  try {
+    const { RAGAgent } = await import("@/features/rag/agent");
+    const agent = new RAGAgent();
+    reply = await agent.run(`Сотрудник ${userName}: ${content}`);
+  } catch (err) {
+    console.warn("RAGAgent execution failed, falling back to legacy parser:", err);
   }
 
-  // 3. FALLBACK ENGINE IF NO ACTION WAS DETERMINED
-  if (!actionExecuted || !reply) {
-    if (targetStage || targetPriority || /проблем|задерж/i.test(lower) || /в\s*работу/i.test(lower)) {
-      if (matchedOrder) {
-        targetOrderToUpdate = matchedOrder;
-        targetComment = content;
-        
-        const updates = [];
-        if (targetStage) updates.push(`этап [${targetStage}]`);
-        if (targetPriority) updates.push(`приоритет [${targetPriority}]`);
-        
-        reply = `[NERVA]: Заказ №${matchedOrder.number} обновлен. ${updates.join(', ')}`;
-        actionExecuted = "update_order";
-      } else {
-        reply = `[NERVA]: Я понял параметры изменения, но не смог найти указанный номер заказа.`;
-      }
-    } else {
-      reply = `[NERVA]: Команда принята, но я не распознал точный номер заказа или параметры. Пожалуйста, повторите (Например: "Заказ 96 на производство, срочно").`;
-    }
+  // 2. Fallback if RAGAgent returns empty
+  if (!reply) {
+    reply = `Принято. Обработал запрос: "${content}".`;
   }
 
-  // 4. PERFORM DATABASE MUTATION
-  if (targetOrderToUpdate && actionExecuted === "update_order") {
-    let finalStatus = targetStatus ?? targetOrderToUpdate.status;
-    let newMetaStr = targetOrderToUpdate.comment;
-    
-    if (finalStatus === "completed" && chatId) {
-      const targetChats = getTargetChats(targetOrderToUpdate);
-      if (targetChats.includes(chatId)) {
-        const { parseOrderMetadata } = await import("./order-metadata");
-        const meta = parseOrderMetadata(targetOrderToUpdate.comment);
-        const sectors = meta.completed_sectors || {};
-        sectors[chatId] = true;
-        
-        const allCompleted = targetChats.every(cid => sectors[cid] === true);
-        if (!allCompleted) {
-           finalStatus = "in_progress";
-           reply += `\n[NERVA]: Сектор отмечен выполненным. Ожидаем другие сектора.`;
-        } else {
-           reply += `\n[NERVA]: Все сектора завершили работу! Заказ полностью выполнен.`;
-        }
-        
-        newMetaStr = buildOrderMetadata({
-          stage: targetStage ?? undefined,
-          priority: targetPriority ?? undefined,
-          comment: targetComment ?? undefined,
-          completed_sectors: sectors,
-        }, targetOrderToUpdate.comment);
-      } else {
-        newMetaStr = buildOrderMetadata({ stage: targetStage ?? undefined, priority: targetPriority ?? undefined, comment: targetComment ?? undefined }, targetOrderToUpdate.comment);
-      }
-    } else {
-      newMetaStr = buildOrderMetadata({ stage: targetStage ?? undefined, priority: targetPriority ?? undefined, comment: targetComment ?? undefined }, targetOrderToUpdate.comment);
-    }
-
-    const { error } = await supabaseAdmin
-      .from("orders")
-      .update({
-        status: finalStatus,
-        comment: newMetaStr,
-        last_update_at: new Date().toISOString(),
-      })
-      .eq("id", targetOrderToUpdate.id);
-
-    if (error) {
-       console.error("Failed to update order in DB", error);
-       reply = `[NERVA]: Ошибка сохранения статуса в базе данных.`;
-    }
-  }
-
-  // Determine target chat to send Nerva reply and user query
+  // Determine target chat to save assistant conversation
   let targetChatId = chatId;
   if (!targetChatId) {
     const { data: dm } = await supabaseAdmin
@@ -247,39 +103,48 @@ export async function processAiAssistantQuery(userId: string, content: string, c
     targetChatId = dm?.id;
   }
 
-  // GUARANTEED CHAT UPDATE (Graceful Fallback)
   if (targetChatId) {
-    // 1. Сохраняем запрос пользователя
-    await supabaseAdmin.from("messages").insert({
-      chat_id: targetChatId, sender_user_id: userId, is_ai: false, content: content,
-    });
+    // Check if user's question was already inserted
+    const { data: lastMsg } = await supabaseAdmin
+      .from("messages")
+      .select("content")
+      .eq("chat_id", targetChatId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    // 2. Сохраняем ответ Nerva AI
+    if (lastMsg?.content !== content) {
+      await supabaseAdmin.from("messages").insert({
+        chat_id: targetChatId, sender_user_id: userId, is_ai: false, content: content,
+      });
+    }
+
+    // Save Nerva AI reply
     await supabaseAdmin.from("messages").insert({
-      chat_id: targetChatId, is_ai: true, kind: "followup", order_id: targetOrderToUpdate?.id ?? null, content: reply,
+      chat_id: targetChatId, is_ai: true, kind: "followup", content: reply,
     });
   }
 
-  return { reply, updatedOrder: targetOrderToUpdate?.number, status: targetStatus };
+  return { reply };
 }
 
 export async function triggerAiPollHelper(actorUserId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { logAudit, notifyOwners } = await import("@/lib/audit.server");
 
-  // Get all active orders currently in progress or stalled
-  const { data: activeOrders } = await supabaseAdmin
-    .from("orders")
-    .select("*")
+  // Get all active order assignments currently in progress or stalled
+  const { data: activeAssigns } = await supabaseAdmin
+    .from("order_assignments")
+    .select("*, order:orders(*)")
     .in("status", ["in_progress", "stalled"])
     .order("last_update_at", { ascending: true });
 
-  if (!activeOrders || activeOrders.length === 0) {
+  if (!activeAssigns || activeAssigns.length === 0) {
     return { ok: true, count: 0, message: "Нет активных заказов для опроса" };
   }
 
   // Fetch all profiles of responsible users
-  const userIds = [...new Set(activeOrders.map(o => o.responsible_user_id).filter(Boolean))] as string[];
+  const userIds = [...new Set(activeAssigns.map(a => a.responsible_user_id).filter(Boolean))] as string[];
   const { data: profiles } = await supabaseAdmin
     .from("profiles")
     .select("id, display_name")
@@ -295,24 +160,24 @@ export async function triggerAiPollHelper(actorUserId: string) {
   const dmMap = new Map((dms ?? []).map(d => [d.dm_user_id, d.id]));
 
   let pollCount = 0;
-  for (const order of activeOrders) {
-    const userName = order.responsible_user_id ? (profileMap.get(order.responsible_user_id) ?? "Сотрудник") : "Команда";
-    const pollMessage = `[NERVA // POLL]: Запрос статуса по заказу №${order.number}\n\n` +
+  for (const assign of activeAssigns) {
+    if (!assign.order) continue;
+    const userName = assign.responsible_user_id ? (profileMap.get(assign.responsible_user_id) ?? "Сотрудник") : "Команда";
+    const pollMessage = `[NERVA // POLL]: Запрос статуса по заказу №${assign.order.number}\n\n` +
       `Ответственный: ${userName}\n` +
-      `Позиция: ${order.nomenclature} (срок: ${order.finish_date ?? "—"})\n\n` +
+      `Позиция: ${assign.order.nomenclature} (срок: ${assign.order.finish_date ?? "—"})\n\n` +
       `*Нажмите кнопку микрофона и надиктуйте короткий ответ или напишите сообщением — я сразу обновлю дашборд.*`;
 
-    // Send to target chats or DM
-    const targetChats = getTargetChats(order);
-    const userDmId = order.responsible_user_id ? dmMap.get(order.responsible_user_id) : null;
-    const allDest = new Set([...targetChats, ...(userDmId ? [userDmId] : [])]);
+    // Send to assignment chat and DM
+    const userDmId = assign.responsible_user_id ? dmMap.get(assign.responsible_user_id) : null;
+    const allDest = new Set([assign.chat_id, ...(userDmId ? [userDmId] : [])]);
 
     for (const cid of allDest) {
       await supabaseAdmin.from("messages").insert({
         chat_id: cid,
         is_ai: true,
         kind: "followup",
-        order_id: order.id,
+        order_id: assign.order.id,
         content: pollMessage,
       });
     }

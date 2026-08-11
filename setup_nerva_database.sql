@@ -151,9 +151,10 @@ CREATE POLICY "messages_insert_member" ON public.messages FOR INSERT TO authenti
 CREATE TABLE public.order_claims (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  chat_id UUID NOT NULL REFERENCES public.chats(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   claimed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(order_id)
+  UNIQUE(order_id, chat_id)
 );
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.order_claims TO authenticated;
 GRANT ALL ON public.order_claims TO service_role;
@@ -164,15 +165,46 @@ CREATE POLICY "claims_select" ON public.order_claims FOR SELECT TO authenticated
 CREATE POLICY "claims_insert_self" ON public.order_claims FOR INSERT TO authenticated
   WITH CHECK (user_id = auth.uid());
 
--- updated_at trigger
+-- Trigger for updated_at
 CREATE OR REPLACE FUNCTION public.touch_updated_at() RETURNS TRIGGER LANGUAGE plpgsql SET search_path = public AS $$
 BEGIN NEW.updated_at = now(); RETURN NEW; END $$;
 CREATE TRIGGER orders_touch BEFORE UPDATE ON public.orders FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
+
+-- Order Assignments
+CREATE TABLE public.order_assignments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  chat_id UUID NOT NULL REFERENCES public.chats(id) ON DELETE CASCADE,
+  responsible_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  status public.order_status NOT NULL DEFAULT 'new',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(order_id, chat_id)
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.order_assignments TO authenticated;
+GRANT ALL ON public.order_assignments TO service_role;
+ALTER TABLE public.order_assignments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "assignments_select" ON public.order_assignments FOR SELECT TO authenticated
+  USING (
+    public.is_owner(auth.uid())
+    OR responsible_user_id = auth.uid()
+    OR public.is_chat_member(chat_id, auth.uid())
+  );
+CREATE POLICY "assignments_manage" ON public.order_assignments FOR ALL TO authenticated
+  USING (public.is_owner(auth.uid())) WITH CHECK (public.is_owner(auth.uid()));
+CREATE POLICY "assignments_responsible_update" ON public.order_assignments FOR UPDATE TO authenticated
+  USING (
+    responsible_user_id = auth.uid() 
+    OR public.is_chat_member(chat_id, auth.uid())
+  );
+CREATE TRIGGER assignments_touch BEFORE UPDATE ON public.order_assignments FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
 -- Realtime
 ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.order_claims;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.order_assignments;
 
 -- Auto-create profile + DM chat on new user
 CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$

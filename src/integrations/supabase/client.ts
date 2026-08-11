@@ -2,6 +2,19 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
+// Provide native-like WebSocket transport for Node.js < 22 (SSR / dev server)
+// In browsers this stays undefined and Supabase uses the native WebSocket.
+let wsTransport: unknown;
+if (typeof window === 'undefined') {
+  try {
+    // Dynamic require so Vite does not bundle "ws" into the client chunk
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    wsTransport = require('ws');
+  } catch {
+    // "ws" not installed – silence, realtime won't be used server-side here
+  }
+}
+
 function isNewSupabaseApiKey(value: string): boolean {
   return value.startsWith('sb_publishable_') || value.startsWith('sb_secret_');
 }
@@ -51,7 +64,8 @@ function createSupabaseClient() {
       storage: typeof window !== 'undefined' ? localStorage : undefined,
       persistSession: true,
       autoRefreshToken: true,
-    }
+    },
+    ...(wsTransport ? { realtime: { transport: wsTransport as never } } : {}),
   });
 }
 

@@ -211,8 +211,54 @@ export type Database = {
         }
         Relationships: []
       }
+      order_assignments: {
+        Row: {
+          chat_id: string
+          created_at: string
+          id: string
+          order_id: string
+          responsible_user_id: string | null
+          status: Database["public"]["Enums"]["order_status"]
+          updated_at: string
+        }
+        Insert: {
+          chat_id: string
+          created_at?: string
+          id?: string
+          order_id: string
+          responsible_user_id?: string | null
+          status?: Database["public"]["Enums"]["order_status"]
+          updated_at?: string
+        }
+        Update: {
+          chat_id?: string
+          created_at?: string
+          id?: string
+          order_id?: string
+          responsible_user_id?: string | null
+          status?: Database["public"]["Enums"]["order_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_assignments_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_assignments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_claims: {
         Row: {
+          chat_id: string
           claimed_at: string
           id: string
           order_id: string
@@ -220,6 +266,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          chat_id: string
           claimed_at?: string
           id?: string
           order_id: string
@@ -227,6 +274,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          chat_id?: string
           claimed_at?: string
           id?: string
           order_id?: string
@@ -234,6 +282,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "order_claims_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "order_claims_order_id_fkey"
             columns: ["order_id"]
@@ -246,11 +301,13 @@ export type Database = {
       orders: {
         Row: {
           ai_message_id: string | null
+          barcode: string | null
           chat_id: string | null
           comment: string | null
           created_at: string
           created_by: string | null
           customer_order: string | null
+          delivery_address: string | null
           dispatched_at: string | null
           dispatched_chat_ids: string[]
           finish_date: string | null
@@ -262,17 +319,21 @@ export type Database = {
           nomenclature: string
           number: string
           order_date: string | null
+          priority: string
           responsible_user_id: string | null
+          stage: string
           status: Database["public"]["Enums"]["order_status"]
           updated_at: string
         }
         Insert: {
           ai_message_id?: string | null
+          barcode?: string | null
           chat_id?: string | null
           comment?: string | null
           created_at?: string
           created_by?: string | null
           customer_order?: string | null
+          delivery_address?: string | null
           dispatched_at?: string | null
           dispatched_chat_ids?: string[]
           finish_date?: string | null
@@ -284,17 +345,21 @@ export type Database = {
           nomenclature?: string
           number: string
           order_date?: string | null
+          priority?: string
           responsible_user_id?: string | null
+          stage?: string
           status?: Database["public"]["Enums"]["order_status"]
           updated_at?: string
         }
         Update: {
           ai_message_id?: string | null
+          barcode?: string | null
           chat_id?: string | null
           comment?: string | null
           created_at?: string
           created_by?: string | null
           customer_order?: string | null
+          delivery_address?: string | null
           dispatched_at?: string | null
           dispatched_chat_ids?: string[]
           finish_date?: string | null
@@ -306,7 +371,9 @@ export type Database = {
           nomenclature?: string
           number?: string
           order_date?: string | null
+          priority?: string
           responsible_user_id?: string | null
+          stage?: string
           status?: Database["public"]["Enums"]["order_status"]
           updated_at?: string
         }

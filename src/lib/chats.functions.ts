@@ -10,7 +10,7 @@ async function assertOwner(ctx: { supabase: any; userId: string }) {
 
 export const createChat = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     name: z.string().min(1),
     member_ids: z.array(z.string().uuid()).default([]),
   }).parse(d))
@@ -28,7 +28,7 @@ export const createChat = createServerFn({ method: "POST" })
 
 export const setChatMembers = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     chat_id: z.string().uuid(),
     member_ids: z.array(z.string().uuid()),
   }).parse(d))
@@ -45,7 +45,7 @@ export const setChatMembers = createServerFn({ method: "POST" })
 
 export const deleteChat = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ chat_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ chat_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwner(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

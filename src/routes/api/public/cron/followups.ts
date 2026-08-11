@@ -22,7 +22,7 @@ export const Route = createFileRoute("/api/public/cron/followups")({
           .in("status", ["in_progress", "stalled"])
           .lte("next_follow_up_at", now.toISOString());
 
-        const key = process.env.LOVABLE_API_KEY;
+        const key = process.env.ORDER_AI_KEY || process.env.LOVABLE_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
         const gateway = key ? createLovableAiGatewayProvider(key) : null;
 
         for (const order of due ?? []) {

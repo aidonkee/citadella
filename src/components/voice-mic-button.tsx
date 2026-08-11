@@ -117,12 +117,7 @@ export function VoiceMicButton({
             toast.error("Речь не распознана. Введите текст вручную или попробуйте снова.");
           }
         } catch (e: any) {
-          const msg = e?.message || String(e);
-          if (msg.includes("AI не настроен") || msg.includes("500")) {
-            toast.error("В APK встроенный микрофон заблокирован. Серверу нужен API-ключ для расшифровки аудиофайла.");
-          } else {
-            toast.error("Сбой распознавания речи. Введите запрос текстом.");
-          }
+          toast.error("Сбой распознавания речи. Попробуйте снова или введите текст.");
         } finally {
           setBusy(false);
         }
@@ -190,10 +185,10 @@ export function VoiceMicButton({
       title={busy ? "Распознавание речи..." : recording ? "Отпустите, чтобы завершить запись" : title}
       className={`relative rounded-full flex items-center justify-center transition-all shrink-0 ${sizeClasses} ${
         recording
-          ? "border-2 border-primary bg-primary/25 shadow-[0_0_20px_rgba(168,85,247,0.6)] animate-pulse text-primary scale-110"
+          ? "bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)] text-white scale-105 border-4 border-blue-200"
           : busy
-          ? "border border-primary/40 bg-primary/10 text-primary opacity-80"
-          : "border border-primary/30 bg-primary/15 hover:bg-primary/25 text-primary hover:shadow-lg hover:shadow-primary/20"
+          ? "bg-slate-100 text-slate-400 opacity-80"
+          : "bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 hover:shadow-sm"
       } ${className}`}
     >
       {busy ? (
@@ -205,8 +200,8 @@ export function VoiceMicButton({
       )}
       {recording && (
         <span className="absolute -top-1 -right-1 flex size-3">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-          <span className="relative inline-flex rounded-full size-3 bg-primary" />
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+          <span className="relative inline-flex rounded-full size-3 bg-red-500" />
         </span>
       )}
     </button>

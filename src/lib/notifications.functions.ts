@@ -21,7 +21,7 @@ export const getNotificationSettings = createServerFn({ method: "GET" })
 
 export const saveNotificationSettings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     realtime_status_changes: z.boolean(),
     realtime_worker_replies: z.boolean(),
     realtime_new_claims: z.boolean(),

@@ -149,14 +149,14 @@ function Dashboard() {
   return (
     <div className="soft-scrollbar h-full overflow-auto p-4 sm:p-6 space-y-6 bg-transparent relative overflow-x-hidden font-sans">
       {/* Nerva Neural Header & Control Panel */}
-      <div className="border border-border/80 bg-card/90 p-5 sm:p-6 shadow-2xl relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 rounded-none">
+      <div className="border border-slate-200 bg-white p-4 sm:p-6 shadow-sm rounded-xl relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-start sm:items-center gap-4">
             <div className="flex items-center gap-2.5">
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground uppercase font-sans">УПРАВЛЕНИЕ ЗАКАЗАМИ</h1>
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 font-sans">Управление заказами</h1>
             </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0 w-full md:w-auto">
           <input 
             type="file" 
             accept=".xlsx, .xls" 
@@ -167,119 +167,134 @@ function Dashboard() {
           <Button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
-            className="h-11 px-5 rounded-none bg-blue-600 hover:bg-blue-700 text-white font-mono font-bold uppercase tracking-wider shadow-none"
+            className="h-10 sm:h-11 px-4 sm:px-5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium shadow-none w-full sm:w-auto border border-blue-200 transition-colors"
           >
-            {importing ? "[ ЗАГРУЗКА... ]" : "[ ИМПОРТ ]"}
+            {importing ? "Загрузка..." : "Импорт"}
           </Button>
           <Button
             onClick={() => exportOrdersToExcel(orders, profiles)}
-            className="h-11 px-5 rounded-none bg-green-600 hover:bg-green-700 text-white font-mono font-bold uppercase tracking-wider shadow-none"
+            className="h-10 sm:h-11 px-4 sm:px-5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-bold shadow-sm w-full sm:w-auto transition-colors"
           >
-            [ ЭКСПОРТ ]
+            Экспорт в Excel
           </Button>
           <Button
             onClick={runAiPoll}
             disabled={polling}
-            className="h-11 px-5 rounded-none bg-primary hover:bg-primary/90 text-primary-foreground font-mono font-bold uppercase tracking-wider shadow-none"
+            className="h-10 sm:h-11 px-4 sm:px-5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium shadow-sm w-full sm:w-auto transition-colors"
           >
-            {polling ? "[ ОПРОС В ПРОЦЕССЕ... ]" : "[ ЗАПУСТИТЬ ОПРОС ВСЕХ ЗАКАЗОВ ]"}
+            {polling ? "Опрос в процессе..." : "Опрос заказов"}
           </Button>
         </div>
       </div>
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 sm:gap-4 relative z-10 font-mono">
-        <Metric label="ВСЕГО ЗАКАЗОВ" value={counts.total} />
-        <Metric label="В РАБОТЕ" value={counts.in_progress} tone="blue" />
-        <Metric label="ПРОБЛЕМЫ" value={counts.stalled} tone="red" />
-        <Metric label="ГОТОВО" value={counts.completed} tone="green" />
-        <Metric label="НОВЫЕ" value={counts.new} tone="amber" />
-        <Metric label="ПРОСРОЧЕНО" value={counts.overdue} tone="rose" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 sm:gap-4 relative z-10">
+        <Metric label="Всего" value={counts.total} />
+        <Metric label="В работе" value={counts.in_progress} tone="blue" />
+        <Metric label="Проблемы" value={counts.stalled} tone="red" />
+        <Metric label="Готово" value={counts.completed} tone="green" />
+        <Metric label="Новые" value={counts.new} tone="amber" />
+        <Metric label="Просрочено" value={counts.overdue} tone="rose" />
       </div>
 
-      {/* Orders Table */}
-      <Card className="border border-border/80 bg-card/90 shadow-xl overflow-hidden relative z-10 rounded-none">
-        <CardHeader className="border-b border-border/60 bg-background/50 px-5 py-4 flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-base font-bold font-sans uppercase tracking-tight">
-              <span>ПАНЕЛЬ КОНТРОЛЯ ЗАКАЗОВ В РЕАЛЬНОМ ВРЕМЕНИ</span>
-            </CardTitle>
-          </div>
+      {/* Orders Kanban View */}
+      <Card className="border border-slate-200 bg-white shadow-sm overflow-hidden relative z-10 rounded-xl">
+        <CardHeader className="border-b border-slate-100 bg-slate-50/50 px-4 sm:px-6 py-4 flex flex-row items-center justify-between">
+          <CardTitle className="text-base font-semibold text-slate-800 tracking-tight">
+            Панель производства
+          </CardTitle>
         </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
-          <Table className="font-mono text-xs">
-            <TableHeader className="bg-background/40">
-              <TableRow className="border-b border-border/60 hover:bg-transparent">
-                <TableHead className="font-bold text-foreground py-3.5 pl-5 uppercase">№ ЗАКАЗА</TableHead>
-                <TableHead className="font-bold text-foreground uppercase">ЭТАП / ПРИОРИТЕТ</TableHead>
-                <TableHead className="font-bold text-foreground uppercase">НОМЕНКЛАТУРА</TableHead>
-                <TableHead className="font-bold text-foreground uppercase">ЧАТ / ЦЕХ</TableHead>
-                <TableHead className="font-bold text-foreground uppercase">ОТВЕТСТВЕННЫЙ</TableHead>
-                <TableHead className="font-bold text-foreground uppercase">СРОК СДАЧИ</TableHead>
-                <TableHead className="font-bold text-foreground uppercase">ПОСЛЕДНИЙ СИГНАЛ</TableHead>
-                <TableHead className="font-bold text-foreground pr-5 uppercase">СТАТУС NERVA</TableHead>
-                <TableHead className="font-bold text-foreground pr-5 uppercase text-right">ДЕЙСТВИЯ</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orders.map((o) => {
-                const meta = parseOrderMetadata(o.comment);
-                return (
-                <TableRow key={o.id} className="border-b border-border/40 hover:bg-primary/5">
-                  <TableCell className="font-mono font-bold text-xs pl-5 text-primary">{o.number}</TableCell>
-                  <TableCell className="text-xs">
-                    <span className="font-bold text-cyan-400 block">{meta.stage.toUpperCase()}</span>
-                    <span className="text-muted-foreground text-[10px] uppercase">{meta.priority}</span>
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate font-sans font-semibold" title={meta.comment ? "Коммент: " + meta.comment : ""}>{o.nomenclature}</TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{o.chat_id ? chats[o.chat_id] || "Чат цеха" : "—"}</TableCell>
-                  <TableCell className="text-xs font-medium">{o.responsible_user_id ? profiles[o.responsible_user_id] ?? "Сотрудник" : <span className="text-muted-foreground italic">Не назначен</span>}</TableCell>
-                  <TableCell className="text-xs">{o.finish_date ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground text-xs">{o.last_update_at ? new Date(o.last_update_at).toLocaleString("ru", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"}</TableCell>
-                  <TableCell className="pr-5">
-                    <span className={`${STATUS_COLOR[o.status]} border border-current px-2.5 py-0.5 font-bold uppercase text-[10px] tracking-wider rounded-none inline-block`}>
-                      {STATUS_LABEL[o.status]}
-                    </span>
-                  </TableCell>
-                  <TableCell className="pr-5 text-right whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setEditingOrder(o)}
-                        className="h-7 px-2 rounded-none text-[10px] font-mono border-primary/50 hover:bg-primary hover:text-primary-foreground uppercase"
-                      >
-                        [ ИЗМЕНИТЬ ]
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={async () => {
-                          if (!confirm(`Вы уверены, что хотите удалить заказ №${o.number}?`)) return;
-                          try {
-                            await deleteOrder({ data: { order_id: o.id } });
-                            toast.success(`Заказ №${o.number} удалён из системы`);
-                          } catch (err: any) {
-                            toast.error("Ошибка удаления: " + err.message);
-                          }
-                        }}
-                        className="h-7 px-2 rounded-none text-[10px] font-mono border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground uppercase"
-                      >
-                        [ УДАЛИТЬ ]
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )})}
-              {orders.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-12 font-mono uppercase">
-                    ЗАКАЗОВ ПОКА НЕТ. СИСТЕМА ОЖИДАЕТ ВВОДА НОВЫХ ПОЗИЦИЙ.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+        <CardContent className="p-4 sm:p-6 bg-slate-50/30 overflow-x-auto min-h-[500px]">
+          <div className="flex flex-row gap-4 h-full min-w-max">
+            {["Новый", "Производство", "Логистика", "Готово"].map(stage => {
+              const stageOrders = orders.filter(o => parseOrderMetadata(o).stage === stage);
+              
+              return (
+                <div key={stage} className="w-[85vw] sm:w-[320px] shrink-0 flex flex-col h-full bg-slate-100/60 rounded-xl border border-slate-200/60 overflow-hidden">
+                  {/* Column Header */}
+                  <div className="p-3 border-b border-slate-200/60 bg-white flex items-center justify-between sticky top-0 z-10">
+                    <h3 className="font-bold text-slate-800 text-sm tracking-tight">{stage}</h3>
+                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-xs font-semibold">{stageOrders.length}</span>
+                  </div>
+
+                  {/* Column Content */}
+                  <div className="p-3 flex-1 overflow-y-auto space-y-3 min-h-[200px]">
+                    {stageOrders.map(o => {
+                      const meta = parseOrderMetadata(o);
+                      const priorityStyle = {
+                        "Срочно": "bg-red-50 text-red-700 border-red-200",
+                        "Высокий": "bg-orange-50 text-orange-700 border-orange-200",
+                        "Средний": "bg-blue-50 text-blue-700 border-blue-200",
+                        "Обычный": "bg-slate-50 text-slate-600 border-slate-200"
+                      }[meta.priority] || "bg-slate-50 text-slate-600 border-slate-200";
+
+                      return (
+                        <div 
+                          key={o.id} 
+                          className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col group relative"
+                        >
+                          <div className="flex justify-between items-start mb-2 gap-2 cursor-pointer" onClick={() => setEditingOrder(o)}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-slate-900 text-base sm:text-lg tracking-tight">#{o.number}</span>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md border ${priorityStyle}`}>
+                              {meta.priority}
+                            </span>
+                          </div>
+                          
+                          <div className="text-slate-800 text-sm font-semibold leading-snug mb-3 cursor-pointer" onClick={() => setEditingOrder(o)}>
+                            {o.nomenclature}
+                          </div>
+                          
+                          {meta.comment && (
+                            <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-md p-2 mb-3 leading-relaxed cursor-pointer" onClick={() => setEditingOrder(o)}>
+                              {meta.comment}
+                            </div>
+                          )}
+
+                          <div className="flex justify-between items-end mt-auto pt-3 border-t border-slate-100">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Сотрудник</span>
+                              <span className="text-xs text-slate-600 font-medium truncate max-w-[100px]">
+                                {o.responsible_user_id ? (profiles[o.responsible_user_id] ?? "Сотрудник") : "—"}
+                              </span>
+                            </div>
+                            
+                            <select
+                              value={meta.stage}
+                              onChange={async (e) => {
+                                const newStage = e.target.value;
+                                const newComment = buildOrderMetadata({ ...meta, stage: newStage as any }, o.comment);
+                                toast.success(`Заказ #${o.number} перемещается...`);
+                                try {
+                                  await updateOrderDetails({
+                                    data: { order_id: o.id, comment: newComment }
+                                  });
+                                } catch (err: any) {
+                                  toast.error(err.message);
+                                }
+                              }}
+                              className="text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-medium py-1.5 px-2 rounded-md transition-colors cursor-pointer outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                              <option value="Новый">Новый ➜</option>
+                              <option value="Производство">Производство ➜</option>
+                              <option value="Логистика">Логистика ➜</option>
+                              <option value="Готово">Готово ➜</option>
+                            </select>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {stageOrders.length === 0 && (
+                      <div className="text-center p-4 text-sm text-slate-400 border-2 border-dashed border-slate-200 rounded-lg">
+                        Нет заказов
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </CardContent>
       </Card>
 
@@ -454,19 +469,19 @@ function Dashboard() {
 
 function Metric({ label, value, tone }: { label: string; value: number; tone?: "blue" | "amber" | "red" | "green" | "rose" }) {
   const toneMap = {
-    blue: { text: "text-blue-400", border: "border-blue-500/40 bg-blue-500/5" },
-    amber: { text: "text-amber-400", border: "border-amber-500/40 bg-amber-500/5" },
-    red: { text: "text-red-400", border: "border-red-500/40 bg-red-500/5" },
-    green: { text: "text-emerald-400", border: "border-emerald-500/40 bg-emerald-500/5" },
-    rose: { text: "text-rose-400", border: "border-rose-500/40 bg-rose-500/5" },
+    blue: { text: "text-blue-700", border: "border-blue-200", bg: "bg-blue-50" },
+    amber: { text: "text-amber-700", border: "border-amber-200", bg: "bg-amber-50" },
+    red: { text: "text-red-700", border: "border-red-200", bg: "bg-red-50" },
+    green: { text: "text-emerald-700", border: "border-emerald-200", bg: "bg-emerald-50" },
+    rose: { text: "text-rose-700", border: "border-rose-200", bg: "bg-rose-50" },
   };
-  const t = tone ? toneMap[tone] : { text: "text-primary", border: "border-primary/40 bg-primary/5" };
+  const t = tone ? toneMap[tone] : { text: "text-slate-800", border: "border-slate-200", bg: "bg-white" };
 
   return (
-    <Card className={`border ${t.border} rounded-none shadow-none overflow-hidden bg-card/80`}>
+    <Card className={`border ${t.border} rounded-xl shadow-sm overflow-hidden ${t.bg}`}>
       <CardContent className="p-4 flex flex-col justify-between">
-        <div className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">{label}</div>
-        <div className={`text-2xl sm:text-3xl font-black mt-2 font-mono ${t.text}`}>{value}</div>
+        <div className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">{label}</div>
+        <div className={`text-2xl sm:text-3xl font-black mt-2 font-sans ${t.text}`}>{value}</div>
       </CardContent>
     </Card>
   );

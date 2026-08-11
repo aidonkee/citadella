@@ -24,7 +24,7 @@ async function assertOwner(ctx: { supabase: any; userId: string }) {
 
 export const createWorker = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => CreateWorker.parse(d))
+  .validator((d: unknown) => CreateWorker.parse(d))
   .handler(async ({ data, context }) => {
     await assertOwner(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -47,7 +47,7 @@ export const createWorker = createServerFn({ method: "POST" })
 
 export const resetWorkerPassword = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ user_id: z.string().uuid(), password: z.string().min(6) }).parse(d))
+  .validator((d: unknown) => z.object({ user_id: z.string().uuid(), password: z.string().min(6) }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwner(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -58,7 +58,7 @@ export const resetWorkerPassword = createServerFn({ method: "POST" })
 
 export const deleteWorker = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ user_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertOwner(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

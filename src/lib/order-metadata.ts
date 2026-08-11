@@ -8,32 +8,56 @@ export interface OrderMetadata {
   completed_sectors?: Record<string, boolean>;
 }
 
-export function parseOrderMetadata(rawComment: string | null | undefined): OrderMetadata {
-  const defaultMeta: OrderMetadata = {
-    stage: "Новый",
-    priority: "Обычный",
-    comment: rawComment || ""
-  };
-  
-  if (!rawComment) return defaultMeta;
-  
-  try {
-    if (rawComment.trim().startsWith('{')) {
-      const parsed = JSON.parse(rawComment);
-      if (parsed.__nerva_meta) {
-        return {
-          stage: parsed.stage || "Новый",
-          priority: parsed.priority || "Обычный",
-          comment: parsed.comment || "",
-          completed_sectors: parsed.completed_sectors || {}
-        };
+export function parseOrderMetadata(orderOrComment: any): OrderMetadata {
+  let stage: OrderStage = "Новый";
+  let priority: OrderPriority = "Обычный";
+  let comment = "";
+  let completed_sectors: Record<string, boolean> = {};
+
+  if (orderOrComment && typeof orderOrComment === "object") {
+    if (orderOrComment.stage) stage = orderOrComment.stage as OrderStage;
+    if (orderOrComment.priority) priority = orderOrComment.priority as OrderPriority;
+    const rawComment = orderOrComment.comment;
+    if (rawComment) {
+      if (typeof rawComment === "string" && rawComment.trim().startsWith("{")) {
+        try {
+          const parsed = JSON.parse(rawComment);
+          if (parsed.__nerva_meta) {
+            if (parsed.stage) stage = parsed.stage;
+            if (parsed.priority) priority = parsed.priority;
+            comment = parsed.comment || "";
+            completed_sectors = parsed.completed_sectors || {};
+          } else {
+            comment = rawComment;
+          }
+        } catch {
+          comment = rawComment;
+        }
+      } else {
+        comment = String(rawComment);
       }
     }
-  } catch (e) {
-    // silently fallback to string
+  } else if (typeof orderOrComment === "string") {
+    if (orderOrComment.trim().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(orderOrComment);
+        if (parsed.__nerva_meta) {
+          stage = parsed.stage || "Новый";
+          priority = parsed.priority || "Обычный";
+          comment = parsed.comment || "";
+          completed_sectors = parsed.completed_sectors || {};
+        } else {
+          comment = orderOrComment;
+        }
+      } catch {
+        comment = orderOrComment;
+      }
+    } else {
+      comment = orderOrComment;
+    }
   }
-  
-  return defaultMeta;
+
+  return { stage, priority, comment, completed_sectors };
 }
 
 export function buildOrderMetadata(meta: Partial<OrderMetadata>, existingRawComment: string | null | undefined): string {

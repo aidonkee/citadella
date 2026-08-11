@@ -82,12 +82,12 @@ export function NervaAiWidget() {
           const b64 = await blobToBase64(blob);
           const { text: resultText } = await transcribeAudio({ data: { audio_base64: b64, mime: blob.type } as any });
           if (resultText && resultText.trim()) {
-            setQuery((prev) => prev ? prev + " " + resultText.trim() : resultText.trim());
+            await handleSend(resultText.trim());
           } else {
             toast.error("Речь не распознана.");
           }
         } catch (e: any) {
-          toast.error("Ошибка расшифровки аудио. Серверу нужен API ключ.");
+          toast.error("Сбой расшифровки аудио.");
         } finally {
           setLoading(false);
         }

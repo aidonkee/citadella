@@ -19,10 +19,10 @@ export function exportOrdersToExcel(orders: any[], profiles: Record<string, stri
       "Номенклатура": o.nomenclature,
       "Кол-во": qty,
       "Заказ покупателя": o.customer_order || "",
-      "Комментарий": meta.comment || "",
+      "Комментарий": meta.comment || o.comment || "",
       "Ответственный": o.responsible_user_id ? profiles[o.responsible_user_id] ?? "Не назначен" : "Не назначен",
-      "Этап": meta.stage,
-      "Приоритет": meta.priority,
+      "Этап": o.stage || meta.stage,
+      "Приоритет": o.priority || meta.priority,
     };
   });
 

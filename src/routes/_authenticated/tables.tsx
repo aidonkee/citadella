@@ -200,11 +200,11 @@ export function TablesEditor() {
             Ведение учёта, расчётные формулы, мгновенная фильтрация и мульти-сортировка данных
           </p>
         </div>
-        <div className="flex items-center gap-2.5 shrink-0">
-          <Button onClick={addRow} className="rounded-none bg-primary text-primary-foreground font-mono font-bold uppercase tracking-wider h-10 px-4 shadow-none">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0 w-full sm:w-auto">
+          <Button onClick={addRow} className="rounded-none bg-primary text-primary-foreground font-mono font-bold uppercase tracking-wider h-10 px-4 shadow-none w-full sm:w-auto">
             <Plus className="size-4 mr-2" />[ + СТРОКА ]
           </Button>
-          <Button onClick={handleSave} disabled={saving} variant="outline" className="rounded-none border-primary/50 text-primary font-mono font-bold uppercase tracking-wider h-10 px-4 hover:bg-primary/10">
+          <Button onClick={handleSave} disabled={saving} variant="outline" className="rounded-none border-primary/50 text-primary font-mono font-bold uppercase tracking-wider h-10 px-4 hover:bg-primary/10 w-full sm:w-auto">
             <Save className="size-4 mr-2" />[ {saving ? "СОХРАНЕНИЕ..." : "СОХРАНИТЬ В БД"} ]
           </Button>
         </div>
@@ -257,8 +257,61 @@ export function TablesEditor() {
         </div>
       </div>
 
-      {/* Основной грид таблицы */}
-      <div className="flex-1 overflow-auto border border-primary/30 bg-card/95 relative soft-scrollbar">
+      {/* Мобильный список карточек (< 640px) */}
+      <div className="block sm:hidden flex-1 overflow-y-auto space-y-3 p-1 font-mono">
+        {processedRows.length === 0 ? (
+          <div className="text-center text-muted-foreground py-8 text-xs">[ НЕТ ДАННЫХ ]</div>
+        ) : (
+          processedRows.map((row, idx) => (
+            <div key={row.id} className="border border-primary/30 bg-card p-3 space-y-2 text-xs shadow-sm">
+              <div className="flex items-center justify-between border-b border-border/40 pb-1.5">
+                <span className="font-bold text-primary text-xs">СТРОКА #{idx + 1}</span>
+                <Button variant="ghost" size="sm" onClick={() => deleteRow(row.id)} className="h-6 px-1 text-destructive hover:bg-destructive/20">
+                  <Trash2 className="size-3" />
+                </Button>
+              </div>
+              <div className="space-y-2 pt-1">
+                {columns.map(col => {
+                  const val = getCellValue(row, col);
+                  return (
+                    <div key={col.id} className="flex flex-col gap-1 border-b border-border/20 pb-1.5">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">{col.name} ({col.type}):</span>
+                      {col.type === "formula" ? (
+                        <div className="px-2 py-1 font-bold text-primary bg-primary/10 border border-primary/20">
+                          {typeof val === "number" ? val.toLocaleString() : val}
+                        </div>
+                      ) : col.type === "status" ? (
+                        <Select value={row[col.id] || "Новый"} onValueChange={v => updateCell(row.id, col.id, v)}>
+                          <SelectTrigger className="rounded-none h-8 text-xs font-mono bg-background border-border">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-none font-mono">
+                            <SelectItem value="Новый">Новый</SelectItem>
+                            <SelectItem value="В работе">В работе</SelectItem>
+                            <SelectItem value="На складе">На складе</SelectItem>
+                            <SelectItem value="Готово">Готово</SelectItem>
+                            <SelectItem value="Задерживается">Задерживается</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          type={col.type === "number" ? "number" : col.type === "date" ? "date" : "text"}
+                          value={row[col.id] ?? ""}
+                          onChange={e => updateCell(row.id, col.id, col.type === "number" ? Number(e.target.value) : e.target.value)}
+                          className="rounded-none h-8 text-xs font-mono bg-background border-border"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Основной десктопный грид таблицы (>= 640px) */}
+      <div className="hidden sm:block flex-1 overflow-auto border border-primary/30 bg-card/95 relative soft-scrollbar">
         <Table className="w-full border-collapse">
           <TableHeader className="bg-background/90 sticky top-0 z-20 border-b border-primary/40">
             <TableRow className="hover:bg-transparent">

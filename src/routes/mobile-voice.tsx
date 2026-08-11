@@ -3,9 +3,11 @@ import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { BrainCircuit, LogOut, Lock, UserRound, Send, Sparkles, MessageSquare } from "lucide-react";
+import { BrainCircuit, LogOut, Lock, UserRound, Send, Sparkles, MessageSquare, Radio } from "lucide-react";
 import { toast } from "sonner";
 import { askNervaDirect } from "@/lib/orders.functions";
+import { transcribeAudio } from "@/lib/stt.functions";
+import { blobToBase64 } from "@/components/voice-mic-button";
 import { NervaNeuralBg } from "@/components/NervaNeuralBg";
 import { GeminiVoiceOrb } from "@/components/GeminiVoiceOrb";
 
@@ -156,68 +158,68 @@ export function MobileVoiceAgent() {
     }
   };
 
-  const handlePressStart = () => {
+  const mediaRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  const handlePressStart = async () => {
     if (isRecording || isProcessing) return;
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      toast.error("Голосовой ввод недоступен в текущем WebView. Используйте текстовый ввод или голосовой набор клавиатуры.");
-      return;
-    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
+        : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "";
+      const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
 
-    const rec = new SpeechRecognition();
-    rec.lang = "ru-RU";
-    rec.continuous = false;
-    rec.interimResults = true;
-    transcriptRef.current = "";
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
 
-    rec.onstart = () => {
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
+        if (blob.size < 800) {
+          toast.error("Запись слишком короткая");
+          setIsRecording(false);
+          setTranscript("");
+          return;
+        }
+
+        setIsRecording(false);
+        setIsProcessing(true);
+        setTranscript("Распознавание речи Nerva ИИ...");
+
+        try {
+          const b64 = await blobToBase64(blob);
+          const { text: resultText } = await transcribeAudio({ data: { audio_base64: b64, mime: blob.type } as any });
+          if (resultText && resultText.trim()) {
+            setTranscript(resultText.trim());
+            await processCommand(resultText.trim());
+          } else {
+            toast.error("Речь не распознана. Попробуйте еще раз.");
+            setTranscript("");
+            setIsProcessing(false);
+          }
+        } catch (e: any) {
+          toast.error("Сбой расшифровки аудио. Введите текст вручную.");
+          setTranscript("");
+          setIsProcessing(false);
+        }
+      };
+
+      mediaRef.current = mr;
+      mr.start();
       setIsRecording(true);
       setTranscript("Слушаю ваш голос...");
-    };
-
-    rec.onresult = (event: any) => {
-      let text = "";
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        text += event.results[i][0].transcript;
-      }
-      transcriptRef.current = text;
-      setTranscript(text);
-    };
-
-    rec.onerror = (e: any) => {
+    } catch (e) {
+      toast.error("Микрофон недоступен. Проверьте разрешения устройства.");
       setIsRecording(false);
-      if (e.error !== "no-speech") {
-        console.warn("SpeechRecognition error:", e.error);
-        toast.error(`Ошибка микрофона (${e.error}). Пожалуйста, введите запрос в поле ниже.`);
-      }
-    };
-
-    rec.onend = async () => {
-      setIsRecording(false);
-      const finalCommand = transcriptRef.current?.trim();
-      if (!finalCommand) {
-        setTranscript("");
-        return;
-      }
-      await processCommand(finalCommand);
-    };
-
-    recognitionRef.current = rec;
-    try {
-      rec.start();
-    } catch {
-      // Игнорируем ошибки двойного запуска
     }
   };
 
   const handlePressEnd = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // Игнорируем
-      }
+    if (mediaRef.current && mediaRef.current.state === "recording") {
+      mediaRef.current.stop();
     }
   };
 

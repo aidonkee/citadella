@@ -7,9 +7,10 @@ import { Input } from "@/components/ui/input";
 import { sendMessage, claimOrder, updateOrderStatus, confirmClaim, rejectClaim } from "@/lib/orders.functions";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
-import { Bot, Send, CheckCircle2, X, Check, MessageSquare, BrainCircuit, Activity } from "lucide-react";
+import { Bot, Send, CheckCircle2, X, Check, MessageSquare, BrainCircuit, Activity, Layers } from "lucide-react";
 import { STATUS_COLOR, STATUS_LABEL, type OrderStatus } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { VoiceMicButton } from "@/components/voice-mic-button";
 import { parseOrderMetadata, buildOrderMetadata, type OrderPriority } from "@/lib/order-metadata";
@@ -28,7 +29,7 @@ type Msg = {
 
 function ChatPage() {
   const { chatId } = useParams({ from: "/_authenticated/chats/$chatId" });
-  const { user, isOwner } = useAuth();
+  const { user, isOwner, isManager } = useAuth();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [chatNames, setChatNames] = useState<Record<string, string>>({});
@@ -48,24 +49,44 @@ function ChatPage() {
       setChatName(chat?.name ?? "");
       const { data } = await supabase.from("messages").select("*").eq("chat_id", chatId).order("created_at");
       setMessages((data ?? []) as Msg[]);
-      const userIds = [...new Set((data ?? []).map((m) => m.sender_user_id).filter(Boolean))] as string[];
-      if (userIds.length) {
-        const { data: ps } = await supabase.from("profiles").select("id, display_name").in("id", userIds);
-        setProfiles(Object.fromEntries((ps ?? []).map((p) => [p.id, p.display_name])));
-      }
+      
+      const messageUserIds = (data ?? []).map((m) => m.sender_user_id).filter(Boolean) as string[];
       const orderIds = [...new Set((data ?? []).map((m) => m.order_id).filter(Boolean))] as string[];
+
+      let claimUserIds: string[] = [];
       if (orderIds.length) {
         const { data: os } = await supabase.from("orders").select("id, status, number, responsible_user_id, comment, chat_id, dispatched_chat_ids").in("id", orderIds);
-        setOrders(Object.fromEntries((os ?? []).map((o) => [o.id, o])));
-        const { data: cs } = await supabase.from("order_claims").select("order_id, user_id, status").in("order_id", orderIds).neq("status", "rejected");
+        
+        // Load assignments for this chat
+        const { data: assignments } = await supabase.from("order_assignments").select("order_id, status, responsible_user_id").in("order_id", orderIds).eq("chat_id", chatId);
+        const assignMap = new Map((assignments ?? []).map(a => [a.order_id, a]));
+
+        setOrders(Object.fromEntries((os ?? []).map((o) => {
+          const assign = assignMap.get(o.id);
+          return [o.id, { 
+            ...o, 
+            status: assign ? assign.status : o.status,
+            responsible_user_id: assign ? assign.responsible_user_id : o.responsible_user_id,
+          }];
+        })));
+        
+        const { data: cs } = await supabase.from("order_claims").select("order_id, user_id, status").in("order_id", orderIds).eq("chat_id", chatId).neq("status", "rejected");
         setClaims(Object.fromEntries((cs ?? []).map((c) => [c.order_id, { user_id: c.user_id, status: c.status }])));
+        claimUserIds = (cs ?? []).map(c => c.user_id).filter(Boolean);
+      }
+
+      const allUserIds = [...new Set([...messageUserIds, ...claimUserIds])];
+      if (allUserIds.length) {
+        const { data: ps } = await supabase.from("profiles").select("id, display_name").in("id", allUserIds);
+        setProfiles(Object.fromEntries((ps ?? []).map((p) => [p.id, p.display_name])));
       }
     };
     load();
     const ch = supabase.channel(`chat-${chatId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "order_claims" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "order_claims", filter: `chat_id=eq.${chatId}` }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "order_assignments", filter: `chat_id=eq.${chatId}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [chatId]);
@@ -82,18 +103,18 @@ function ChatPage() {
   };
 
   const onClaim = async (orderId: string) => {
-    try { await claimOrder({ data: { order_id: orderId } as any }); toast.success("Отклик отправлен — подтвердите или откажитесь"); }
+    try { await claimOrder({ data: { order_id: orderId, chat_id: chatId } as any }); toast.success("Отклик отправлен"); }
     catch (err: any) { toast.error(err.message); }
   };
 
   const onConfirm = async (orderId: string) => {
-    try { await confirmClaim({ data: { order_id: orderId } as any }); toast.success("Заказ подтверждён"); }
+    try { await confirmClaim({ data: { order_id: orderId, chat_id: chatId } as any }); toast.success("Заказ подтверждён и взят в работу"); }
     catch (err: any) { toast.error(err.message); }
   };
 
   const onReject = async (orderId: string) => {
     const reason = window.prompt("Причина отказа (необязательно):") ?? undefined;
-    try { await rejectClaim({ data: { order_id: orderId, reason } as any }); toast.success("Отклик отозван"); }
+    try { await rejectClaim({ data: { order_id: orderId, chat_id: chatId, reason } as any }); toast.success("Отклик отклонён"); }
     catch (err: any) { toast.error(err.message); }
   };
 
@@ -105,63 +126,41 @@ function ChatPage() {
     catch (err: any) { toast.error(err.message); }
   };
 
-  const onPriorityChange = async (orderId: string, priority: OrderPriority) => {
-    try {
-      const order = orders[orderId];
-      if (!order) return;
-      const meta = parseOrderMetadata(order.comment);
-      const newComment = buildOrderMetadata({ ...meta, priority }, order.comment);
-      await updateOrderDetails({ data: { order_id: orderId, comment: newComment } as any });
-      toast.success("Приоритет обновлен");
-    } catch (err: any) {
-      toast.error(err.message);
-    }
-  };
-
-  const activeOrders = Object.values(orders).filter(o => o.status !== "completed");
-
   return (
-    <div className="flex h-full min-w-0">
+    <div className="flex h-[calc(100vh-4rem)] min-w-0 overflow-hidden">
       <div className="hidden md:block"><ChatsSidebar activeId={chatId} /></div>
-      <div className="flex-1 flex flex-col min-w-0">
-        <div className="border-b border-border/40 bg-background/35 px-3 sm:px-5 py-2 sm:py-3 flex items-center gap-2 backdrop-blur-xl">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="md:hidden"><MessageSquare className="size-5" /></Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-72"><ChatsSidebar activeId={chatId} /></SheetContent>
-          </Sheet>
-          <div className="font-semibold truncate">{chatName}</div>
-        </div>
+      <div className="flex-1 flex flex-col min-w-0 p-2 sm:p-4 bg-slate-100/40">
+        <Card className="flex-1 flex flex-col overflow-hidden border-slate-200/80 shadow-md bg-white">
+          <CardHeader className="py-3 sm:py-4 px-4 border-b border-slate-100 bg-slate-50/50 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon" className="md:hidden"><MessageSquare className="size-5" /></Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="p-0 w-72"><ChatsSidebar activeId={chatId} /></SheetContent>
+              </Sheet>
+              <CardTitle className="text-base sm:text-lg font-bold text-slate-800 tracking-tight">{chatName || "Чат"}</CardTitle>
+            </div>
+            <Link to="/dashboard" className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+              <Activity className="size-3.5" /> Дашборд
+            </Link>
+          </CardHeader>
 
-        {activeOrders.length > 0 && (
-          <div className="bg-card border-b border-border/50 px-4 py-3 shadow-sm z-10">
-            <div className="text-[10px] uppercase font-bold text-muted-foreground mb-2.5 tracking-wider flex items-center gap-1.5">
-              <Activity className="size-3 text-primary" /> Закрепленные заказы ({activeOrders.length})
-            </div>
-            <div className="flex flex-wrap gap-2.5">
-              {activeOrders.map(o => {
-                const meta = parseOrderMetadata(o.comment);
-                return (
-                  <div key={o.id} className="flex items-center gap-2.5 bg-background border border-border/60 rounded-md px-2.5 py-1.5 shadow-sm text-xs transition-colors hover:border-primary/40">
-                    <span className="font-mono font-bold text-foreground">{o.number}</span>
-                    <Badge variant="outline" className={STATUS_COLOR[o.status] + " scale-90 -ml-1 border-transparent"}>{STATUS_LABEL[o.status]}</Badge>
-                    
-                    <Select value={meta.priority} onValueChange={(val) => onPriorityChange(o.id, val as OrderPriority)}>
-                      <SelectTrigger className="h-6 w-24 text-[10px] bg-muted/50 border-border/50">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Срочно">Срочно</SelectItem>
-                        <SelectItem value="Высокий">Высокий</SelectItem>
-                        <SelectItem value="Средний">Средний</SelectItem>
-                        <SelectItem value="Обычный">Обычный</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                );
-              })}
-            </div>
+        {Object.keys(orders).length > 0 && (
+          <div className="px-4 py-2 bg-slate-100/70 border-b border-slate-200/60 flex flex-wrap gap-2 text-xs">
+            <span className="font-semibold text-slate-500 flex items-center gap-1"><Layers className="size-3" /> Заказы в чате:</span>
+            {Object.values(orders).map(o => {
+              const meta = parseOrderMetadata(o.comment);
+              const priorityStyle = meta.priority === "Срочно" ? "bg-red-100 text-red-700 border-red-200" : "bg-slate-200 text-slate-700 border-slate-300";
+              return (
+                <div key={o.id} className="flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-slate-200 shadow-2xs">
+                  <span className="font-bold text-slate-800">#{o.number}</span>
+                  <Badge variant="outline" className={`text-[10px] px-1 py-0 ${STATUS_COLOR[o.status]}`}>{STATUS_LABEL[o.status]}</Badge>
+                  <div className="w-[1px] h-4 bg-slate-200 mx-0.5"></div>
+                  <span className="truncate max-w-[100px] text-slate-600 font-medium" title={meta.comment}>{meta.comment || ""}</span>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -171,12 +170,12 @@ function ChatPage() {
             const mine = m.sender_user_id === user?.id;
             return (
               <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
-                <div className={`max-w-[88%] sm:max-w-[70%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 shadow-lg transition-all ${
-                  m.is_ai ? "border border-primary/30 bg-gradient-to-r from-primary/15 via-background/60 to-accent/10 backdrop-blur-2xl text-foreground shadow-primary/10" :
-                  mine ? "bg-primary text-primary-foreground font-medium rounded-br-sm shadow-primary/20" : "border border-border/40 bg-card/85 backdrop-blur-xl"
+                <div className={`max-w-[88%] sm:max-w-[70%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 shadow-sm transition-all ${
+                  m.is_ai ? "border border-slate-200 bg-slate-50 text-slate-900 rounded-bl-sm" :
+                  mine ? "bg-slate-900 text-white font-medium rounded-br-sm" : "border border-slate-200 bg-white text-slate-900 rounded-bl-sm"
                 }`}>
-                  <div className={`flex items-center gap-1.5 text-[11px] font-bold tracking-wide mb-1 ${m.is_ai ? "text-primary" : mine ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                    {m.is_ai ? <><BrainCircuit className="size-3.5 animate-pulse" />Nerva AI</> : <span>{m.sender_user_id ? profiles[m.sender_user_id] ?? "…" : "—"}</span>}
+                  <div className={`flex items-center gap-1.5 text-[11px] font-bold tracking-wide mb-1 ${m.is_ai ? "text-blue-600" : mine ? "text-slate-300" : "text-slate-500"}`}>
+                    {m.is_ai ? <><BrainCircuit className="size-3.5" />Nerva AI</> : <span>{m.sender_user_id ? profiles[m.sender_user_id] ?? "…" : "—"}</span>}
                     <span className="opacity-60 font-normal">· {new Date(m.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</span>
                   </div>
                   <div className="prose prose-sm dark:prose-invert max-w-none text-xs sm:text-sm leading-relaxed whitespace-pre-wrap">
@@ -184,8 +183,9 @@ function ChatPage() {
                   </div>
                   {m.kind === "order_card" && order && (() => {
                     const claim = claims[m.order_id!];
-                    const myPending = claim?.status === "pending" && claim.user_id === user?.id;
-                    const otherPending = claim?.status === "pending" && claim.user_id !== user?.id;
+                    const isMyClaim = claim?.status === "pending" && claim.user_id === user?.id;
+                    const isPending = claim?.status === "pending";
+                    const claimerName = claim ? (profiles[claim.user_id] ?? "Сотрудник") : "";
                     const meta = parseOrderMetadata(order.comment);
                     const sectors = meta.completed_sectors || {};
                     const thisSectorDone = sectors[chatId] === true;
@@ -195,25 +195,41 @@ function ChatPage() {
                       <div className="mt-3 flex flex-col gap-2">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant="outline" className={STATUS_COLOR[order.status]}>{STATUS_LABEL[order.status]}</Badge>
-                          {claim?.status === "pending" && (
-                            <Badge variant="outline" className="text-amber-400 border-amber-500/40">Ожидает подтверждения</Badge>
-                          )}
+                          
                           {order.status === "new" && !claim && !isOwner && (
                             <Button size="sm" onClick={() => onClaim(m.order_id!)}>Откликнуться</Button>
                           )}
-                          {myPending && (
-                            <>
-                              <Button size="sm" onClick={() => onConfirm(m.order_id!)}>
-                                <Check className="size-4 mr-1" />Подтвердить
+
+                          {isPending && isMyClaim && (
+                            <div className="flex items-center gap-2 flex-wrap w-full mt-1 p-2 bg-amber-50 rounded-lg border border-amber-200">
+                              <span className="text-xs text-amber-800 font-medium">Вы откликнулись на этот заказ:</span>
+                              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => onConfirm(m.order_id!)}>
+                                <Check className="size-4 mr-1" />Подтвердить и взять в работу
                               </Button>
                               <Button size="sm" variant="outline" onClick={() => onReject(m.order_id!)}>
                                 <X className="size-4 mr-1" />Отказаться
                               </Button>
-                            </>
+                            </div>
                           )}
-                          {otherPending && !isOwner && (
-                            <span className="text-xs text-muted-foreground">Откликнулся другой сотрудник</span>
+
+                          {isPending && !isMyClaim && (isOwner || isManager) && (
+                            <div className="flex items-center gap-2 flex-wrap w-full mt-1 p-2 bg-amber-50 rounded-lg border border-amber-200">
+                              <span className="text-xs text-amber-800 font-medium">Отклик от <strong>{claimerName}</strong> — требуется утверждение:</span>
+                              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => onConfirm(m.order_id!)}>
+                                <Check className="size-4 mr-1" />Утвердить отклик {claimerName}
+                              </Button>
+                              <Button size="sm" variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={() => onReject(m.order_id!)}>
+                                <X className="size-4 mr-1" />Отклонить отклик
+                              </Button>
+                            </div>
                           )}
+
+                          {isPending && !isMyClaim && !isOwner && !isManager && (
+                            <Badge variant="outline" className="text-amber-600 border-amber-400 bg-amber-50">
+                              Откликнулся {claimerName} — ожидает подтверждения
+                            </Badge>
+                          )}
+
                           {order.responsible_user_id === user?.id && order.status !== "completed" && !thisSectorDone && (
                             <Button size="sm" variant="secondary" onClick={() => onToggleSector(m.order_id!, true)}>
                               <CheckCircle2 className="size-4 mr-1" />Сектор завершил работу
@@ -244,13 +260,22 @@ function ChatPage() {
           })}
           {messages.length === 0 && <div className="text-center text-muted-foreground py-12">Сообщений пока нет</div>}
         </div>
-        <form onSubmit={onSend} className="border-t border-primary/20 bg-background/60 p-3 sm:p-4 flex items-center gap-2.5 backdrop-blur-2xl">
-          <VoiceMicButton size="md" onText={(t) => setText((prev) => (prev ? prev + " " + t : t))} disabled={sending} title="Нажмите для голосового ввода в чат" />
-          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Напишите сообщение или упомяните @Nerva..." autoFocus className="h-10 rounded-xl border-primary/30 bg-background/70" />
-          <Button type="submit" disabled={sending || !text.trim()} className="h-10 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md shadow-primary/20"><Send className="size-4" /></Button>
+        <form onSubmit={onSend} className="border-t border-slate-200 bg-white p-3 sm:p-4 flex items-center gap-3">
+          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Сообщение или команда..." autoFocus className="h-12 sm:h-14 text-base rounded-2xl border-slate-200 bg-slate-50 focus-visible:ring-1 focus-visible:ring-blue-500 shadow-inner" />
+          
+          {text.trim() ? (
+            <Button type="submit" disabled={sending} className="h-12 sm:h-14 w-12 sm:w-14 shrink-0 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all">
+              <Send className="size-5 sm:size-6 ml-1" />
+            </Button>
+          ) : (
+            <div className="shrink-0">
+              <VoiceMicButton size="lg" className="h-12 w-12 sm:h-14 sm:w-14" onText={(t) => setText((prev) => (prev ? prev + " " + t : t))} disabled={sending} title="Удерживайте для голосового ввода" />
+            </div>
+          )}
         </form>
-      </div>
+      </Card>
     </div>
+  </div>
   );
 }
 
@@ -266,12 +291,12 @@ export function ChatsSidebar({ activeId }: { activeId?: string }) {
     return () => { supabase.removeChannel(ch); };
   }, []);
   return (
-    <aside className="glass-nav soft-scrollbar w-72 md:w-64 h-full border-r border-border/40 bg-sidebar/60 overflow-y-auto">
-      <div className="px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">Чаты</div>
+    <aside className="w-72 md:w-64 h-full border-r border-slate-200 bg-slate-50 overflow-y-auto">
+      <div className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Чаты</div>
       <div className="space-y-0.5 px-2">
         {chats.map((c) => (
           <Link key={c.id} to="/chats/$chatId" params={{ chatId: c.id }}
-            className={`block px-3 py-2 rounded-xl text-sm truncate transition ${activeId === c.id ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"}`}>
+            className={`block px-3 py-2 rounded-xl text-sm truncate transition ${activeId === c.id ? "bg-blue-100 text-blue-900 font-medium" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}>
             {c.name}
           </Link>
         ))}

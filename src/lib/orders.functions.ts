@@ -17,7 +17,7 @@ const OrderInput = z.object({
 
 export const createOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => OrderInput.parse(d))
+  .validator((d: unknown) => OrderInput.parse(d))
   .handler(async ({ data, context }) => {
     const role = await getRole(context);
     if (role !== "owner" && role !== "manager") throw new Error("Forbidden");
@@ -61,7 +61,7 @@ export const createOrder = createServerFn({ method: "POST" })
 
 export const dispatchOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     order_id: z.string().uuid(),
     chat_ids: z.array(z.string().uuid()).min(1),
   }).parse(d))
@@ -90,10 +90,18 @@ export const dispatchOrder = createServerFn({ method: "POST" })
       is_dispatched: true,
       dispatched_at: new Date().toISOString(),
       dispatched_chat_ids: data.chat_ids,
-      chat_id: data.chat_ids[0],
       ai_message_id: firstMsgId,
     }).eq("id", order.id);
     if (updateError) throw new Error(updateError.message);
+
+    // Create assignments for each chat
+    const assignments = data.chat_ids.map(cid => ({
+      order_id: order.id,
+      chat_id: cid,
+      status: "new" as const
+    }));
+    await supabaseAdmin.from("order_assignments").upsert(assignments, { onConflict: "order_id,chat_id" });
+
     await logAudit({ actor_user_id: context.userId, action: "order.dispatched", entity_type: "order", entity_id: order.id, details: { chat_ids: data.chat_ids, number: order.number } });
     return { ok: true, count: data.chat_ids.length };
   });
@@ -101,7 +109,7 @@ export const dispatchOrder = createServerFn({ method: "POST" })
 
 export const bulkCreateOrders = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     chat_id: z.string().uuid(),
     follow_up_interval_minutes: z.number().int().min(5).default(120),
     orders: z.array(OrderInput.omit({ chat_id: true, follow_up_interval_minutes: true })),
@@ -118,132 +126,167 @@ export const bulkCreateOrders = createServerFn({ method: "POST" })
 
 export const claimOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ order_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ order_id: z.string().uuid(), chat_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
     const { data: existing } = await supabaseAdmin
       .from("order_claims").select("id, status, user_id")
-      .eq("order_id", data.order_id).neq("status", "rejected").maybeSingle();
-    if (existing) throw new Error("По заказу уже есть активный отклик");
+      .eq("order_id", data.order_id).eq("chat_id", data.chat_id).neq("status", "rejected").maybeSingle();
+    if (existing) throw new Error("По заказу в этом цехе уже есть активный отклик");
 
-    await supabaseAdmin.from("order_claims").insert({ order_id: data.order_id, user_id: context.userId, status: "pending" });
+    await supabaseAdmin.from("order_claims").insert({ order_id: data.order_id, chat_id: data.chat_id, user_id: context.userId, status: "pending" });
 
     const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", data.order_id).single();
     if (!order) throw new Error("Заказ не найден");
     const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", context.userId).single();
 
-    const targetChats = getTargetChats(order);
-    for (const chatId of targetChats) {
-      const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
-        chat_id: chatId, is_ai: true, kind: "system", order_id: order.id,
-        content: `⏳ **${profile?.display_name ?? "Сотрудник"}** откликнулся на заказ **${order.number}** — ожидает подтверждения.`,
-      }).select().single();
-      if (msgError) throw new Error(msgError.message);
-      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: chatId, kind: "system", order_id: order.id } });
-    }
-    await logAudit({ actor_user_id: context.userId, action: "claim.pending", entity_type: "order", entity_id: order.id, details: { number: order.number } });
-    await notifyOwners({ title: "Новый отклик на заказ", body: `${profile?.display_name ?? "Сотрудник"} откликнулся на заказ ${order.number}`, link: `/chats/${order.chat_id}` , kind: "new_claim" });
+    const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
+      chat_id: data.chat_id, is_ai: true, kind: "system", order_id: order.id,
+      content: `⏳ **${profile?.display_name ?? "Сотрудник"}** откликнулся на заказ **${order.number}** — ожидает подтверждения (сотрудником или руководителем).`,
+    }).select().single();
+    if (msgError) throw new Error(msgError.message);
+    await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: data.chat_id, kind: "system", order_id: order.id } });
+
+    await logAudit({ actor_user_id: context.userId, action: "claim.pending", entity_type: "order", entity_id: order.id, details: { number: order.number, chat_id: data.chat_id } });
+    await notifyOwners({ title: "Новый отклик на заказ", body: `${profile?.display_name ?? "Сотрудник"} откликнулся на заказ ${order.number} в одном из цехов`, link: `/chats/${data.chat_id}` , kind: "new_claim" });
     return { ok: true };
   });
 
 export const confirmClaim = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ order_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ order_id: z.string().uuid(), chat_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
+    const { getRole } = await import("./orders.server");
+    
     const { data: claim } = await supabaseAdmin
-      .from("order_claims").select("*").eq("order_id", data.order_id)
-      .eq("user_id", context.userId).eq("status", "pending").maybeSingle();
+      .from("order_claims").select("*")
+      .eq("order_id", data.order_id).eq("chat_id", data.chat_id)
+      .eq("status", "pending").maybeSingle();
+      
     if (!claim) throw new Error("Нет ожидающего отклика");
+
+    const role = await getRole(context);
+    const isOwnerOrManager = role === "owner" || role === "manager";
+    const isClaimer = claim.user_id === context.userId;
+
+    if (!isOwnerOrManager && !isClaimer) {
+      throw new Error("Только автор отклика или Руководитель могут подтвердить отклик");
+    }
 
     await supabaseAdmin.from("order_claims").update({ status: "confirmed" }).eq("id", claim.id);
     const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", data.order_id).single();
     if (!order) throw new Error("Заказ не найден");
     const next = new Date(Date.now() + order.follow_up_interval_minutes * 60 * 1000).toISOString();
-    await supabaseAdmin.from("orders").update({
-      responsible_user_id: context.userId,
+    
+    await supabaseAdmin.from("order_assignments").update({
+      responsible_user_id: claim.user_id,
       status: "in_progress",
-      next_follow_up_at: next,
+    }).eq("order_id", data.order_id).eq("chat_id", data.chat_id);
+
+    await supabaseAdmin.from("orders").update({
       last_update_at: new Date().toISOString(),
+      next_follow_up_at: next,
     }).eq("id", data.order_id);
 
-    const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", context.userId).single();
-    const targetChats = getTargetChats(order);
-    for (const chatId of targetChats) {
-      const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
-        chat_id: chatId, is_ai: true, kind: "system", order_id: order.id,
-        content: `✅ Заказ **${order.number}** взял в работу **${profile?.display_name ?? "сотрудник"}**`,
-      }).select().single();
-      if (msgError) throw new Error(msgError.message);
-      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: chatId, kind: "system", order_id: order.id } });
-    }
-    const { data: dm } = await supabaseAdmin.from("chats").select("id").eq("is_dm", true).eq("dm_user_id", context.userId).maybeSingle();
+    const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", claim.user_id).single();
+    const workerName = profile?.display_name ?? "Сотрудник";
+    const confirmedByText = isOwnerOrManager && !isClaimer ? " (утверждено руководителем)" : "";
+
+    const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
+      chat_id: data.chat_id, is_ai: true, kind: "system", order_id: order.id,
+      content: `✅ Заказ **${order.number}** взял в работу **${workerName}**${confirmedByText}`,
+    }).select().single();
+    if (msgError) throw new Error(msgError.message);
+    await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: data.chat_id, kind: "system", order_id: order.id } });
+
+    const { data: dm } = await supabaseAdmin.from("chats").select("id").eq("is_dm", true).eq("dm_user_id", claim.user_id).maybeSingle();
     if (dm) {
       const { data: followupMsg } = await supabaseAdmin.from("messages").insert({
         chat_id: dm.id, is_ai: true, kind: "followup", order_id: order.id,
-        content: `Привет! Ты подтвердил заказ **${order.number}** (${order.nomenclature}). Напиши коротко — на какой стадии? Я буду уточнять каждые ${order.follow_up_interval_minutes} мин.`,
+        content: `Привет! Заказ **${order.number}** (${order.nomenclature}) подтверждён и передан тебе в работу. Напиши коротко — на какой стадии? Я буду уточнять каждые ${order.follow_up_interval_minutes} мин.`,
       }).select().single();
       await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: followupMsg?.id ?? null, details: { chat_id: dm.id, kind: "followup", order_id: order.id } });
     }
-    await logAudit({ actor_user_id: context.userId, action: "claim.confirmed", entity_type: "order", entity_id: order.id, details: { number: order.number } });
-    await notifyOwners({ title: "Заказ принят в работу", body: `${profile?.display_name ?? "Сотрудник"} подтвердил заказ ${order.number}`, link: `/chats/${order.chat_id}` , kind: "status_change" });
+    await logAudit({ actor_user_id: context.userId, action: "claim.confirmed", entity_type: "order", entity_id: order.id, details: { number: order.number, chat_id: data.chat_id, worker_id: claim.user_id } });
+    await notifyOwners({ title: "Заказ принят в работу", body: `${workerName} подтвердил заказ ${order.number} в одном из цехов`, link: `/chats/${data.chat_id}` , kind: "status_change" });
     return { ok: true };
   });
 
 export const rejectClaim = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ order_id: z.string().uuid(), reason: z.string().max(500).optional() }).parse(d))
+  .validator((d: unknown) => z.object({ order_id: z.string().uuid(), chat_id: z.string().uuid(), reason: z.string().max(500).optional() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
+    const { getRole } = await import("./orders.server");
+
     const { data: claim } = await supabaseAdmin
-      .from("order_claims").select("*").eq("order_id", data.order_id)
-      .eq("user_id", context.userId).eq("status", "pending").maybeSingle();
+      .from("order_claims").select("*")
+      .eq("order_id", data.order_id).eq("chat_id", data.chat_id)
+      .eq("status", "pending").maybeSingle();
+      
     if (!claim) throw new Error("Нет ожидающего отклика");
+
+    const role = await getRole(context);
+    const isOwnerOrManager = role === "owner" || role === "manager";
+    const isClaimer = claim.user_id === context.userId;
+
+    if (!isOwnerOrManager && !isClaimer) {
+      throw new Error("Только автор отклика или Руководитель могут отклонить отклик");
+    }
 
     await supabaseAdmin.from("order_claims").update({ status: "rejected" }).eq("id", claim.id);
     const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", data.order_id).single();
-    if (!order) throw new Error("Заказ не найден");
-    const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", context.userId).single();
-    const targetChats = getTargetChats(order);
-    for (const chatId of targetChats) {
-      const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
-        chat_id: chatId, is_ai: true, kind: "system", order_id: order.id,
-        content: `↩️ **${profile?.display_name ?? "Сотрудник"}** отклонил заказ **${order.number}**${data.reason ? ` — ${data.reason}` : ""}. Заказ снова свободен.`,
-      }).select().single();
-      if (msgError) throw new Error(msgError.message);
-      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: chatId, kind: "system", order_id: order.id } });
-    }
-    await logAudit({ actor_user_id: context.userId, action: "claim.rejected", entity_type: "order", entity_id: data.order_id, details: { reason: data.reason ?? null, number: order?.number } });
-    await notifyOwners({ title: "Отклик отклонён", body: `${profile?.display_name ?? "Сотрудник"} отказался от заказа ${order?.number ?? ""}`, link: `/chats/${order?.chat_id ?? ""}` , kind: "new_claim" });
+    const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", claim.user_id).single();
+    const workerName = profile?.display_name ?? "Сотрудник";
+
+    const actorText = isClaimer ? `**${workerName}** отозвал свой отклик` : `Руководитель отклонил отклик **${workerName}**`;
+
+    const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
+      chat_id: data.chat_id, is_ai: true, kind: "system", order_id: data.order_id,
+      content: `↩️ ${actorText} на заказ **${order?.number ?? ""}**${data.reason ? ` — ${data.reason}` : ""}. Заказ снова свободен.`,
+    }).select().single();
+    if (msgError) throw new Error(msgError.message);
+    await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: data.chat_id, kind: "system", order_id: data.order_id } });
+
+    await logAudit({ actor_user_id: context.userId, action: "claim.rejected", entity_type: "order", entity_id: data.order_id, details: { reason: data.reason ?? null, number: order?.number, chat_id: data.chat_id } });
+    await notifyOwners({ title: "Отклик отклонён", body: `Отклик на заказ ${order?.number ?? ""} отклонён`, link: `/chats/${data.chat_id}` , kind: "new_claim" });
     return { ok: true };
   });
 
+
 export const updateOrderStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     order_id: z.string().uuid(),
+    chat_id: z.string().uuid(),
     status: z.enum(["new", "in_progress", "stalled", "completed", "overdue"]),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
-    const { data: prev } = await supabaseAdmin.from("orders").select("status, number, chat_id").eq("id", data.order_id).single();
-    const { error } = await supabaseAdmin.from("orders").update({
+    
+    const { data: assignment } = await supabaseAdmin.from("order_assignments").select("status").eq("order_id", data.order_id).eq("chat_id", data.chat_id).single();
+    const prevStatus = assignment?.status;
+
+    const { error } = await supabaseAdmin.from("order_assignments").update({
       status: data.status,
-      last_update_at: new Date().toISOString(),
-    }).eq("id", data.order_id);
+    }).eq("order_id", data.order_id).eq("chat_id", data.chat_id);
     if (error) throw new Error(error.message);
-    await logAudit({ actor_user_id: context.userId, action: "order.status_changed", entity_type: "order", entity_id: data.order_id, details: { from: prev?.status, to: data.status, number: prev?.number } });
-    await notifyOwners({ title: `Статус заказа ${prev?.number ?? ""}`, body: `${prev?.status ?? "—"} → ${data.status}`, link: prev?.chat_id ? `/chats/${prev.chat_id}` : undefined , kind: "status_change" });
+
+    const { data: prev } = await supabaseAdmin.from("orders").select("number").eq("id", data.order_id).single();
+
+    await logAudit({ actor_user_id: context.userId, action: "order.status_changed", entity_type: "order", entity_id: data.order_id, details: { from: prevStatus, to: data.status, number: prev?.number, chat_id: data.chat_id } });
+    await notifyOwners({ title: `Статус заказа ${prev?.number ?? ""}`, body: `${prevStatus ?? "—"} → ${data.status}`, link: `/chats/${data.chat_id}`, kind: "status_change" });
     return { ok: true };
   });
 
 export const sendMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     chat_id: z.string().uuid(),
     content: z.string().min(1).max(4000),
   }).parse(d))
@@ -289,7 +332,7 @@ export const triggerAiPoll = createServerFn({ method: "POST" })
 
 export const askNervaDirect = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     content: z.string().min(1).max(4000),
     chat_id: z.string().uuid().optional().nullable(),
   }).parse(d))
@@ -300,7 +343,7 @@ export const askNervaDirect = createServerFn({ method: "POST" })
 
 export const toggleOrderSectorStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     order_id: z.string().uuid(),
     chat_id: z.string().uuid(),
     is_completed: z.boolean(),
@@ -374,7 +417,7 @@ export const toggleOrderSectorStatus = createServerFn({ method: "POST" })
 
 export const deleteOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ order_id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ order_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const role = await getRole(context);
     if (role !== "owner" && role !== "manager") throw new Error("Forbidden: Только владелец или менеджер могут удалять заказы");
@@ -391,7 +434,7 @@ export const deleteOrder = createServerFn({ method: "POST" })
 
 export const updateOrderDetails = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({
+  .validator((d: unknown) => z.object({
     order_id: z.string().uuid(),
     number: z.string().min(1).optional(),
     nomenclature: z.string().optional(),
@@ -436,7 +479,7 @@ const ExcelOrderInput = z.object({
 
 export const importOrders = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.array(ExcelOrderInput).parse(d))
+  .validator((d: unknown) => z.array(ExcelOrderInput).parse(d))
   .handler(async ({ data, context }) => {
     const role = await getRole(context);
     if (role !== "owner" && role !== "manager") throw new Error("Forbidden");

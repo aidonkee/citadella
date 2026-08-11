@@ -1,8 +1,32 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 
 const LOVABLE_AIG_RUN_ID_HEADER = "X-Lovable-AIG-Run-ID";
 
+/**
+ * Creates an AI provider.
+ * - If apiKey is a Gemini key (starts with "AIzaSy"), uses @ai-sdk/google directly.
+ * - Otherwise, routes through the Lovable AI Gateway (OpenAI-compatible).
+ */
 export function createLovableAiGatewayProvider(apiKey: string, initialRunId?: string) {
+  // Detect Gemini API key — use native Google provider directly
+  if (apiKey.startsWith("AIzaSy")) {
+    const google = createGoogleGenerativeAI({ apiKey });
+
+    // Wrap in a compatible interface that accepts "google/model-name" or just "model-name"
+    const provider = (modelId: string) => {
+      // Strip "google/" prefix if present (e.g. "google/gemini-3-flash-preview" → "gemini-3-flash-preview")
+      const cleanId = modelId.startsWith("google/") ? modelId.slice(7) : modelId;
+      return google(cleanId);
+    };
+
+    return Object.assign(provider, {
+      getRunId: () => undefined as string | undefined,
+      waitForRunId: () => Promise.resolve(undefined as string | undefined),
+    });
+  }
+
+  // --- Lovable AI Gateway (OpenAI-compatible) ---
   let runId = initialRunId?.trim() || undefined;
   let resolveRunId: (value: string | undefined) => void = () => {};
   let runIdResolved = false;

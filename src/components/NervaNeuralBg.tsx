@@ -72,7 +72,7 @@ export const NervaNeuralBg: React.FC = () => {
     }
 
     const signals: Signal[] = [];
-    const colors = ['#8b5cf6', '#a855f7', '#00f0ff', '#ec4899', '#ffffff'];
+    const colors = ['#3b82f6', '#2563eb', '#1d4ed8', '#64748b', '#cbd5e1'];
 
     // Camera perspective
     const fov = 400;
@@ -145,7 +145,7 @@ export const NervaNeuralBg: React.FC = () => {
             ctx.beginPath();
             ctx.moveTo(p1.px, p1.py);
             ctx.lineTo(p2.px, p2.py);
-            ctx.strokeStyle = `rgba(168, 85, 247, ${alpha})`;
+            ctx.strokeStyle = `rgba(148, 163, 184, ${alpha})`;
             ctx.lineWidth = 1.3 * ((p1.scale + p2.scale) / 2);
             ctx.stroke();
 
@@ -200,8 +200,8 @@ export const NervaNeuralBg: React.FC = () => {
 
         ctx.beginPath();
         ctx.arc(p.px, p.py, Math.max(1.2, size), 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(236, 72, 153, ${Math.min(1, p.scale * 0.95)})`;
-        ctx.shadowColor = '#a855f7';
+        ctx.fillStyle = `rgba(59, 130, 246, ${Math.min(1, p.scale * 0.95)})`;
+        ctx.shadowColor = '#93c5fd';
         ctx.shadowBlur = size * 4;
         ctx.fill();
         ctx.shadowBlur = 0;
@@ -227,19 +227,19 @@ export const NervaNeuralBg: React.FC = () => {
   }, []);
 
   return (
-    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-95" />
+    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden bg-slate-50">
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-60" />
       
-      {/* Cyber Sharp Geometric Corner Accents */}
-      <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-primary/40 pointer-events-none" />
-      <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-primary/40 pointer-events-none" />
-      <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-primary/40 pointer-events-none" />
-      <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-primary/40 pointer-events-none" />
-      <div className="absolute top-1/2 left-4 -translate-y-1/2 text-[10px] font-mono text-primary/30 tracking-widest pointer-events-none rotate-[-90deg]">
-        NERVA//SYS:ONLINE
+      {/* Corporate Geometric Corner Accents */}
+      <div className="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 border-slate-300 pointer-events-none" />
+      <div className="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 border-slate-300 pointer-events-none" />
+      <div className="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 border-slate-300 pointer-events-none" />
+      <div className="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 border-slate-300 pointer-events-none" />
+      <div className="absolute top-1/2 left-4 -translate-y-1/2 text-[10px] font-sans text-slate-400 tracking-widest pointer-events-none rotate-[-90deg]">
+        NERVA ERP
       </div>
-      <div className="absolute top-1/2 right-4 -translate-y-1/2 text-[10px] font-mono text-primary/30 tracking-widest pointer-events-none rotate-[90deg]">
-        NEURAL//LINK:ACTIVE
+      <div className="absolute top-1/2 right-4 -translate-y-1/2 text-[10px] font-sans text-slate-400 tracking-widest pointer-events-none rotate-[90deg]">
+        SYSTEM ONLINE
       </div>
     </div>
   );
