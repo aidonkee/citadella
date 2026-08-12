@@ -196,34 +196,21 @@ export const GeminiVoiceOrb: React.FC<GeminiVoiceOrbProps> = ({
 
   const dynamicScale = isRecording ? 1 + audioVolume * 0.25 : isProcessing ? 1.05 : 1;
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    e.preventDefault();
-    if (!disabled && !isRecording) onPressStart();
+  const handleOrbClick = (e: React.MouseEvent | React.TouchEvent) => {
+    if (disabled) return;
+    if (isRecording) {
+      onPressEnd();
+    } else {
+      onPressStart();
+    }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    e.preventDefault();
-    if (isRecording) onPressEnd();
-  };
-
-  const handleMouseDown = () => {
-    if (!disabled && !isRecording) onPressStart();
-  };
-
-  const handleMouseUp = () => {
-    if (isRecording) onPressEnd();
-  };
 
   return (
     <div className="relative flex flex-col items-center justify-center my-6 select-none">
       {/* Контейнер сферы со строго круглой формой (без квадратов и углов) */}
       <div
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
+        onClick={handleOrbClick}
         className={`relative flex items-center justify-center rounded-full transition-all duration-200 transform active:scale-95 cursor-pointer select-none ${
           disabled ? "opacity-50 cursor-not-allowed" : ""
         }`}

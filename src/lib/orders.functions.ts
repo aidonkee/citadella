@@ -130,26 +130,65 @@ export const claimOrder = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
-    const { data: existing } = await supabaseAdmin
-      .from("order_claims").select("id, status, user_id")
-      .eq("order_id", data.order_id).eq("chat_id", data.chat_id).neq("status", "rejected").maybeSingle();
-    if (existing) throw new Error("По заказу в этом цехе уже есть активный отклик");
+    
+    // Check if order in this chat is already assigned
+    const { data: existingAssignment } = await supabaseAdmin
+      .from("order_assignments")
+      .select("responsible_user_id, status")
+      .eq("order_id", data.order_id)
+      .eq("chat_id", data.chat_id)
+      .maybeSingle();
 
-    await supabaseAdmin.from("order_claims").insert({ order_id: data.order_id, chat_id: data.chat_id, user_id: context.userId, status: "pending" });
+    if (existingAssignment?.responsible_user_id) {
+      throw new Error("Заказ в этом цехе уже взят в работу");
+    }
+
+    // Immediately record claim as confirmed
+    await supabaseAdmin.from("order_claims").upsert({
+      order_id: data.order_id,
+      chat_id: data.chat_id,
+      user_id: context.userId,
+      status: "confirmed",
+    }, { onConflict: "order_id,chat_id" });
 
     const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", data.order_id).single();
     if (!order) throw new Error("Заказ не найден");
+    const next = new Date(Date.now() + order.follow_up_interval_minutes * 60 * 1000).toISOString();
+
+    // Immediately assign responsible user and set status to in_progress
+    await supabaseAdmin.from("order_assignments").upsert({
+      order_id: data.order_id,
+      chat_id: data.chat_id,
+      responsible_user_id: context.userId,
+      status: "in_progress",
+    }, { onConflict: "order_id,chat_id" });
+
+    await supabaseAdmin.from("orders").update({
+      last_update_at: new Date().toISOString(),
+      next_follow_up_at: next,
+    }).eq("id", data.order_id);
+
     const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", context.userId).single();
+    const workerName = profile?.display_name ?? "Сотрудник";
 
     const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
       chat_id: data.chat_id, is_ai: true, kind: "system", order_id: order.id,
-      content: `⏳ **${profile?.display_name ?? "Сотрудник"}** откликнулся на заказ **${order.number}** — ожидает подтверждения (сотрудником или руководителем).`,
+      content: `✅ Заказ **${order.number}** взял в работу **${workerName}**`,
     }).select().single();
     if (msgError) throw new Error(msgError.message);
     await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: data.chat_id, kind: "system", order_id: order.id } });
 
-    await logAudit({ actor_user_id: context.userId, action: "claim.pending", entity_type: "order", entity_id: order.id, details: { number: order.number, chat_id: data.chat_id } });
-    await notifyOwners({ title: "Новый отклик на заказ", body: `${profile?.display_name ?? "Сотрудник"} откликнулся на заказ ${order.number} в одном из цехов`, link: `/chats/${data.chat_id}` , kind: "new_claim" });
+    const { data: dm } = await supabaseAdmin.from("chats").select("id").eq("is_dm", true).eq("dm_user_id", context.userId).maybeSingle();
+    if (dm) {
+      const { data: followupMsg } = await supabaseAdmin.from("messages").insert({
+        chat_id: dm.id, is_ai: true, kind: "followup", order_id: order.id,
+        content: `Привет! Ты взял в работу заказ **${order.number}** (${order.nomenclature}). Напиши коротко — на какой стадии? Я буду уточнять каждые ${order.follow_up_interval_minutes} мин.`,
+      }).select().single();
+      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: followupMsg?.id ?? null, details: { chat_id: dm.id, kind: "followup", order_id: order.id } });
+    }
+
+    await logAudit({ actor_user_id: context.userId, action: "claim.confirmed", entity_type: "order", entity_id: order.id, details: { number: order.number, chat_id: data.chat_id } });
+    await notifyOwners({ title: "Заказ взят в работу", body: `${workerName} взял в работу заказ ${order.number}`, link: `/chats/${data.chat_id}` , kind: "status_change" });
     return { ok: true };
   });
 

@@ -61,8 +61,10 @@ export const transcribeAudio = createServerFn({ method: "POST" })
 
     // 3. Direct Gemini REST API (if GEMINI_API_KEY configured)
     if (geminiKey) {
-      const mimeType = data.mime.split(";")[0].trim() || "audio/webm";
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`, {
+      let mimeType = data.mime.split(";")[0].trim();
+      if (!mimeType || mimeType === "unknown") mimeType = "audio/webm";
+      
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -77,6 +79,7 @@ export const transcribeAudio = createServerFn({ method: "POST" })
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
+        console.error("Gemini STT error:", res.status, errText);
         throw new Error(`Gemini STT error ${res.status}: ${errText.slice(0, 200)}`);
       }
 

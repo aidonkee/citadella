@@ -182,51 +182,27 @@ function ChatPage() {
                     <ReactMarkdown>{m.content}</ReactMarkdown>
                   </div>
                   {m.kind === "order_card" && order && (() => {
-                    const claim = claims[m.order_id!];
-                    const isMyClaim = claim?.status === "pending" && claim.user_id === user?.id;
-                    const isPending = claim?.status === "pending";
-                    const claimerName = claim ? (profiles[claim.user_id] ?? "Сотрудник") : "";
                     const meta = parseOrderMetadata(order.comment);
                     const sectors = meta.completed_sectors || {};
                     const thisSectorDone = sectors[chatId] === true;
                     const assignedChats = Array.from(new Set([...(order.dispatched_chat_ids || []), order.chat_id].filter((id): id is string => typeof id === "string" && id.length > 0)));
+                    const isAssigned = Boolean(order.responsible_user_id);
+                    const workerName = order.responsible_user_id ? (profiles[order.responsible_user_id] ?? "Сотрудник") : "";
                     
                     return (
                       <div className="mt-3 flex flex-col gap-2">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant="outline" className={STATUS_COLOR[order.status]}>{STATUS_LABEL[order.status]}</Badge>
                           
-                          {order.status === "new" && !claim && !isOwner && (
-                            <Button size="sm" onClick={() => onClaim(m.order_id!)}>Откликнуться</Button>
+                          {!isAssigned && order.status !== "completed" && (
+                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onClaim(m.order_id!)}>
+                              <Check className="size-4 mr-1" />Взять в работу
+                            </Button>
                           )}
 
-                          {isPending && isMyClaim && (
-                            <div className="flex items-center gap-2 flex-wrap w-full mt-1 p-2 bg-amber-50 rounded-lg border border-amber-200">
-                              <span className="text-xs text-amber-800 font-medium">Вы откликнулись на этот заказ:</span>
-                              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => onConfirm(m.order_id!)}>
-                                <Check className="size-4 mr-1" />Подтвердить и взять в работу
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => onReject(m.order_id!)}>
-                                <X className="size-4 mr-1" />Отказаться
-                              </Button>
-                            </div>
-                          )}
-
-                          {isPending && !isMyClaim && (isOwner || isManager) && (
-                            <div className="flex items-center gap-2 flex-wrap w-full mt-1 p-2 bg-amber-50 rounded-lg border border-amber-200">
-                              <span className="text-xs text-amber-800 font-medium">Отклик от <strong>{claimerName}</strong> — требуется утверждение:</span>
-                              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => onConfirm(m.order_id!)}>
-                                <Check className="size-4 mr-1" />Утвердить отклик {claimerName}
-                              </Button>
-                              <Button size="sm" variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={() => onReject(m.order_id!)}>
-                                <X className="size-4 mr-1" />Отклонить отклик
-                              </Button>
-                            </div>
-                          )}
-
-                          {isPending && !isMyClaim && !isOwner && !isManager && (
-                            <Badge variant="outline" className="text-amber-600 border-amber-400 bg-amber-50">
-                              Откликнулся {claimerName} — ожидает подтверждения
+                          {isAssigned && (
+                            <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50">
+                              В работе: {workerName}
                             </Badge>
                           )}
 

@@ -29,7 +29,7 @@ export function VoiceMicButton({
   className = "",
   disabled = false,
   size = "md",
-  title = "Нажмите или зажмите для голосового ввода",
+  title = "Нажмите для голосового ввода",
 }: VoiceMicButtonProps) {
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -40,7 +40,7 @@ export function VoiceMicButton({
   const startRecording = async () => {
     if (disabled || busy || recording) return;
 
-    // 1. ПРИОРИТЕТ: Использование встроенного Web Speech API (SpeechRecognition) для мгновенного распознавания речи в WebView / браузере
+    // 1. Web Speech API (Chrome / Edge)
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
@@ -51,7 +51,7 @@ export function VoiceMicButton({
 
         rec.onstart = () => {
           setRecording(true);
-          toast.info("Слушаю вас...");
+          toast.info("Слушаю вас... Нажмите ещё раз для отправки.");
         };
 
         rec.onresult = (e: any) => {
@@ -61,13 +61,14 @@ export function VoiceMicButton({
           }
           if (text.trim()) {
             onText(text.trim());
+            toast.success("Речь распознана!");
           }
         };
 
         rec.onerror = (e: any) => {
+          console.warn("Web Speech API error:", e.error);
           setRecording(false);
-          if (e.error !== "no-speech") {
-            // Если SpeechRecognition не сработал или дал сбой — плавный фоллбэк на MediaRecorder
+          if (e.error !== "no-speech" && e.error !== "aborted") {
             startMediaRecorderFallback();
           }
         };
@@ -79,87 +80,94 @@ export function VoiceMicButton({
         recognitionRef.current = rec;
         rec.start();
         return;
-      } catch {
-        // Если SpeechRecognition заблокирован или вызвал ошибку инициализации — переходим к MediaRecorder
+      } catch (err) {
+        console.warn("Web Speech API init failed, using MediaRecorder", err);
       }
     }
 
-    // 2. ФОЛЛБЭК: Запись через MediaRecorder и отправка на сервер
+    // 2. MediaRecorder + Gemini STT Fallback
     await startMediaRecorderFallback();
   };
 
   const startMediaRecorderFallback = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
-        : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4" : "";
+      let mime = "";
+      if (MediaRecorder.isTypeSupported("audio/webm")) mime = "audio/webm";
+      else if (MediaRecorder.isTypeSupported("audio/mp4")) mime = "audio/mp4";
+      else if (MediaRecorder.isTypeSupported("audio/ogg")) mime = "audio/ogg";
+
       const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       chunksRef.current = [];
+      
       mr.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
+
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, { type: mr.mimeType || "audio/webm" });
-        if (blob.size < 1000) {
+        const blobType = mr.mimeType || mime || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: blobType });
+        
+        if (blob.size < 500) {
           toast.error("Слишком короткая запись голоса");
           setRecording(false);
           return;
         }
+
         setBusy(true);
         setRecording(false);
         try {
           const b64 = await blobToBase64(blob);
-          const { text } = await transcribeAudio({ data: { audio_base64: b64, mime: blob.type } as any });
+          const { text } = await transcribeAudio({ data: { audio_base64: b64, mime: blobType } as any });
           if (text && text.trim()) {
             onText(text.trim());
+            toast.success("Голос успешно распознан!");
           } else {
-            toast.error("Речь не распознана. Введите текст вручную или попробуйте снова.");
+            toast.error("Речь не распознана. Попробуйте сказать громче.");
           }
         } catch (e: any) {
-          toast.error("Сбой распознавания речи. Попробуйте снова или введите текст.");
+          console.error("STT Error:", e);
+          toast.error("Ошибка сервера при распознавании речи.");
         } finally {
           setBusy(false);
         }
       };
+
       mediaRef.current = mr;
       mr.start();
       setRecording(true);
-      toast.info("Запись голоса началась...");
+      toast.info("Запись голоса... Нажмите кнопку ещё раз, чтобы закончить.");
     } catch (e: any) {
-      toast.error("Микрофон недоступен. Проверьте разрешения в браузере или введите текст вручную.");
+      console.error("getUserMedia error:", e);
+      toast.error("Микрофон недоступен. Разрешите доступ к микрофону в браузере.");
       setRecording(false);
     }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current && recording) {
+    if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
       } catch {}
     }
-    if (mediaRef.current && recording) {
-      mediaRef.current.stop();
+    if (mediaRef.current && mediaRef.current.state !== "inactive") {
+      try {
+        mediaRef.current.stop();
+      } catch {}
     }
+    setRecording(false);
   };
 
-  const handlePointerDown = (e: React.PointerEvent) => {
+  const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!disabled && !recording && !busy) {
-      startRecording();
-    }
-  };
+    if (disabled || busy) return;
 
-  const handlePointerUp = (e: React.PointerEvent) => {
-    e.preventDefault();
     if (recording) {
       stopRecording();
+    } else {
+      startRecording();
     }
-  };
-
-  // Prevent default context menu on long press (mobile)
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
   };
 
   const sizeClasses = {
@@ -177,15 +185,12 @@ export function VoiceMicButton({
   return (
     <button
       type="button"
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerUp}
-      onContextMenu={handleContextMenu}
+      onClick={handleClick}
       disabled={disabled || busy}
-      title={busy ? "Распознавание речи..." : recording ? "Отпустите, чтобы завершить запись" : title}
-      className={`relative rounded-full flex items-center justify-center transition-all shrink-0 ${sizeClasses} ${
+      title={busy ? "Распознавание..." : recording ? "Нажмите для отправки" : title}
+      className={`relative rounded-full flex items-center justify-center transition-all shrink-0 active:scale-95 ${sizeClasses} ${
         recording
-          ? "bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)] text-white scale-105 border-4 border-blue-200"
+          ? "bg-red-600 shadow-[0_0_20px_rgba(220,38,38,0.5)] text-white scale-105 border-4 border-red-200"
           : busy
           ? "bg-slate-100 text-slate-400 opacity-80"
           : "bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 hover:shadow-sm"
@@ -194,7 +199,7 @@ export function VoiceMicButton({
       {busy ? (
         <Loader2 className={`${iconSizes} animate-spin`} />
       ) : recording ? (
-        <Square className={`${iconSizes} text-primary fill-current animate-bounce`} />
+        <Square className={`${iconSizes} text-white fill-current animate-pulse`} />
       ) : (
         <Mic className={`${iconSizes}`} />
       )}
