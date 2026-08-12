@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build && mkdir -p dist",
+    "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "create-owner": "node create-owner.mjs",
