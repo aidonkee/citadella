@@ -1,6 +1,3 @@
 {
-  "buildCommand": "vite build",
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
-  ]
+  "buildCommand": "vite build"
 }

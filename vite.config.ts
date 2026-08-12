@@ -8,6 +8,13 @@ export default defineConfig({
   },
   nitro: {
     preset: "vercel",
+    vercel: {
+      config: {
+        routes: [
+          { handle: "filesystem" },
+          { src: "/(.*)", dest: "/__nitro" },
+        ],
+      },
+    },
   },
 });
-
