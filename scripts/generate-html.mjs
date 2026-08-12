@@ -1,4 +1,4 @@
-import { readdirSync, statSync, writeFileSync, existsSync } from "fs";
+import { readdirSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 
 const distDir = join(process.cwd(), "dist");
@@ -12,19 +12,12 @@ if (!existsSync(assetsDir)) {
 const files = readdirSync(assetsDir);
 const cssFile = files.find((f) => f.startsWith("styles") && f.endsWith(".css")) || files.find((f) => f.endsWith(".css"));
 
-// Find all main index / entry JS files sorted by size descending
-const jsFiles = files
-  .filter((f) => f.endsWith(".js") && (f.startsWith("index-") || f.startsWith("route-")))
-  .map((f) => ({ name: f, size: statSync(join(assetsDir, f)).size }))
-  .sort((a, b) => b.size - a.size);
-
-// Top 3 entry chunks (vendor 793kb, router 118kb, route 14kb)
-const scriptTags = jsFiles
-  .slice(0, 3)
-  .map((f) => `<script type="module" src="/assets/${f.name}"></script>`)
-  .join("\n    ");
+// Main client entry script (the index-*.js that imports router and vendors)
+// We filter out tiny helper chunks and giant vendor chunks
+const mainJsFile = files.find((f) => f.startsWith("index-") && f.endsWith(".js") && !f.includes("DtqBFgK5") && !f.includes("tTIq2VVr") && !f.includes("U2dGyGLz")) || files.find((f) => f.startsWith("index-") && f.endsWith(".js"));
 
 const cssTag = cssFile ? `<link rel="stylesheet" href="/assets/${cssFile}">` : "";
+const jsTag = mainJsFile ? `<script type="module" src="/assets/${mainJsFile}"></script>` : "";
 
 const html = `<!DOCTYPE html>
 <html lang="ru">
@@ -39,9 +32,9 @@ const html = `<!DOCTYPE html>
   </head>
   <body>
     <div id="root"></div>
-    ${scriptTags}
+    ${jsTag}
   </body>
 </html>`;
 
 writeFileSync(join(distDir, "index.html"), html, "utf8");
-console.log("[generate-html] Successfully generated dist/index.html with scripts:", jsFiles.slice(0, 3).map((f) => f.name));
+console.log("[generate-html] Successfully generated dist/index.html with main entry script:", mainJsFile);
