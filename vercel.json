@@ -1,4 +1,3 @@
 {
-  "buildCommand": "vite build",
-  "outputDirectory": ".vercel/output"
+  "buildCommand": "vite build"
 }
