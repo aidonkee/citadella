@@ -19,7 +19,6 @@
     "@ai-sdk/openai-compatible": "^3.0.1",
     "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^5.2.2",
-    "@oxc-parser/binding-darwin-arm64": "^0.120.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.8",
@@ -83,7 +82,6 @@
   "devDependencies": {
     "@eslint/js": "^9.32.0",
     "@lovable.dev/vite-tanstack-config": "2.7.6",
-    "@rolldown/binding-darwin-arm64": "^1.2.0",
     "@types/node": "^22.16.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
@@ -101,6 +99,7 @@
     "vite": "^6.2.0"
   },
   "optionalDependencies": {
+    "@oxc-parser/binding-darwin-arm64": "^0.120.0",
     "@rolldown/binding-darwin-arm64": "^1.2.0"
   }
 }
