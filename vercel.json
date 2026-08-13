@@ -1,5 +1,5 @@
 {
-  "outputDirectory": "dist",
+  "outputDirectory": ".vercel/output/static",
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]

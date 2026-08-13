@@ -1,11 +1,11 @@
 import { readdirSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 
-const distDir = join(process.cwd(), "dist");
-const assetsDir = join(distDir, "assets");
+const staticDir = join(process.cwd(), ".vercel/output/static");
+const assetsDir = join(staticDir, "assets");
 
 if (!existsSync(assetsDir)) {
-  console.error("[generate-html] assets dir not found");
+  console.error("[generate-html] assets dir not found at", assetsDir);
   process.exit(1);
 }
 
@@ -13,7 +13,6 @@ const files = readdirSync(assetsDir);
 const cssFile = files.find((f) => f.startsWith("styles") && f.endsWith(".css")) || files.find((f) => f.endsWith(".css"));
 
 // Main client entry script (the index-*.js that imports router and vendors)
-// We filter out tiny helper chunks and giant vendor chunks
 const mainJsFile = files.find((f) => f.startsWith("index-") && f.endsWith(".js") && !f.includes("DtqBFgK5") && !f.includes("tTIq2VVr") && !f.includes("U2dGyGLz")) || files.find((f) => f.startsWith("index-") && f.endsWith(".js"));
 
 const cssTag = cssFile ? `<link rel="stylesheet" href="/assets/${cssFile}">` : "";
@@ -36,5 +35,5 @@ const html = `<!DOCTYPE html>
   </body>
 </html>`;
 
-writeFileSync(join(distDir, "index.html"), html, "utf8");
-console.log("[generate-html] Successfully generated dist/index.html with main entry script:", mainJsFile);
+writeFileSync(join(staticDir, "index.html"), html, "utf8");
+console.log("[generate-html] Successfully generated .vercel/output/static/index.html with main entry script:", mainJsFile);
