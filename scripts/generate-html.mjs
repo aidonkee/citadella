@@ -1,22 +1,39 @@
-import { readdirSync, writeFileSync, existsSync } from "fs";
+import { readdirSync, writeFileSync, existsSync, cpSync, mkdirSync } from "fs";
 import { join } from "path";
 
-const staticDir = join(process.cwd(), ".vercel/output/static");
-const assetsDir = join(staticDir, "assets");
+const cwd = process.cwd();
+const backupAssetsDir = join(cwd, ".vercel/assets_backup");
+const staticDir = join(cwd, ".vercel/output/static");
+const targetAssetsDir = join(staticDir, "assets");
 
-if (!existsSync(assetsDir)) {
-  console.error("[generate-html] assets dir not found at", assetsDir);
-  process.exit(1);
-}
+const mode = process.argv[2];
 
-const files = readdirSync(assetsDir);
-const cssFile = files.find((f) => f.startsWith("styles") && f.endsWith(".css")) || files.find((f) => f.endsWith(".css"));
-const mainJsFile = files.find((f) => f.startsWith("index-") && f.endsWith(".js") && !f.includes("DtqBFgK5") && !f.includes("tTIq2VVr") && !f.includes("U2dGyGLz")) || files.find((f) => f.startsWith("index-") && f.endsWith(".js"));
+if (mode === "backup") {
+  const currentAssetsDir = join(staticDir, "assets");
+  if (existsSync(currentAssetsDir)) {
+    cpSync(currentAssetsDir, backupAssetsDir, { recursive: true });
+    console.log("[generate-html] Backed up assets to", backupAssetsDir);
+  }
+} else {
+  if (existsSync(backupAssetsDir)) {
+    if (!existsSync(staticDir)) mkdirSync(staticDir, { recursive: true });
+    cpSync(backupAssetsDir, targetAssetsDir, { recursive: true });
+    console.log("[generate-html] Restored assets to", targetAssetsDir);
+  }
 
-const cssTag = cssFile ? `<link rel="stylesheet" href="/assets/${cssFile}">` : "";
-const jsTag = mainJsFile ? `<script type="module" src="/assets/${mainJsFile}"></script>` : "";
+  if (!existsSync(targetAssetsDir)) {
+    console.error("[generate-html] target assets dir not found at", targetAssetsDir);
+    process.exit(1);
+  }
 
-const html = `<!DOCTYPE html>
+  const files = readdirSync(targetAssetsDir);
+  const cssFile = files.find((f) => f.startsWith("styles") && f.endsWith(".css")) || files.find((f) => f.endsWith(".css"));
+  const mainJsFile = files.find((f) => f.startsWith("index-") && f.endsWith(".js") && !f.includes("DtqBFgK5") && !f.includes("tTIq2VVr") && !f.includes("U2dGyGLz")) || files.find((f) => f.startsWith("index-") && f.endsWith(".js"));
+
+  const cssTag = cssFile ? `<link rel="stylesheet" href="/assets/${cssFile}">` : "";
+  const jsTag = mainJsFile ? `<script type="module" src="/assets/${mainJsFile}"></script>` : "";
+
+  const html = `<!DOCTYPE html>
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
@@ -33,5 +50,6 @@ const html = `<!DOCTYPE html>
   </body>
 </html>`;
 
-writeFileSync(join(staticDir, "index.html"), html, "utf8");
-console.log("[generate-html] Successfully updated .vercel/output/static/index.html with main script:", mainJsFile);
+  writeFileSync(join(staticDir, "index.html"), html, "utf8");
+  console.log("[generate-html] Successfully generated .vercel/output/static/index.html with script:", mainJsFile);
+}
