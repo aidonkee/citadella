@@ -11,8 +11,6 @@ if (!existsSync(assetsDir)) {
 
 const files = readdirSync(assetsDir);
 const cssFile = files.find((f) => f.startsWith("styles") && f.endsWith(".css")) || files.find((f) => f.endsWith(".css"));
-
-// Main client entry script (the index-*.js that imports router and vendors)
 const mainJsFile = files.find((f) => f.startsWith("index-") && f.endsWith(".js") && !f.includes("DtqBFgK5") && !f.includes("tTIq2VVr") && !f.includes("U2dGyGLz")) || files.find((f) => f.startsWith("index-") && f.endsWith(".js"));
 
 const cssTag = cssFile ? `<link rel="stylesheet" href="/assets/${cssFile}">` : "";
@@ -36,4 +34,4 @@ const html = `<!DOCTYPE html>
 </html>`;
 
 writeFileSync(join(staticDir, "index.html"), html, "utf8");
-console.log("[generate-html] Successfully generated .vercel/output/static/index.html with main entry script:", mainJsFile);
+console.log("[generate-html] Successfully updated .vercel/output/static/index.html with main script:", mainJsFile);

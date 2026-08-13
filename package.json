@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build && npx nitro build --preset vercel",
+    "build": "vite build && node scripts/generate-html.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "create-owner": "node create-owner.mjs",
