@@ -6,5 +6,20 @@ export default defineConfig({
   },
   nitro: {
     preset: "vercel",
+    prerender: {
+      routes: [
+        "/",
+        "/auth",
+        "/dashboard",
+        "/chats",
+        "/admin/orders",
+        "/admin/users",
+        "/admin/inbox",
+        "/admin/settings",
+        "/admin/audit",
+      ],
+      crawlLinks: true,
+      failOnError: false,
+    },
   },
 });
