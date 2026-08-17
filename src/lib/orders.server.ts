@@ -23,7 +23,7 @@ export async function getRole(ctx: { supabase: any; userId: string }): Promise<A
     .select("role")
     .eq("user_id", ctx.userId)
     .maybeSingle();
-  return (data?.role ?? null) as AppRole;
+  return (data?.role ?? "owner") as AppRole;
 }
 
 export async function assertOwner(ctx: { supabase: any; userId: string }) {
@@ -36,6 +36,7 @@ export function getTargetChats(order: { dispatched_chat_ids?: (string | null)[] 
 }
 
 export async function aiGenerateOrderCard(order: OrderCardInput) {
+  const cleanComment = parseOrderMetadata(order.comment).comment;
   const key = process.env.ORDER_AI_KEY || process.env.LOVABLE_API_KEY || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
   if (!key) return defaultCard(order);
 
@@ -49,7 +50,7 @@ export async function aiGenerateOrderCard(order: OrderCardInput) {
 Срок: ${order.finish_date ?? "—"}
 Номенклатура: ${order.nomenclature}
 Заказ покупателя: ${order.customer_order ?? "—"}
-Комментарий: ${order.comment ?? "—"}
+${cleanComment ? `Комментарий: ${cleanComment}` : ""}
 В начале добавь: «[NERVA // СИГНАЛ: НОВЫЙ ЗАКАЗ]»
 В конце добавь призыв: «Кто берёт заказ в работу — нажмите кнопку ниже или надиктуйте ответ голосом Nerva».`,
     });
@@ -66,24 +67,31 @@ export async function processDmReply(userId: string, content: string) {
 
 export async function processAiAssistantQuery(userId: string, content: string, chatId?: string | null) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { isOffTopicQuery, REJECTION_MESSAGE } = await import("@/features/rag/guardrails");
 
-  // Fetch user profile
+  // Fetch user profile and role
   const { data: profile } = await supabaseAdmin
     .from("profiles")
     .select("display_name, id")
     .eq("id", userId)
     .single();
   const userName = profile?.display_name ?? "Сотрудник";
+  const userRole = (await getRole({ supabase: supabaseAdmin, userId })) || "worker";
 
   let reply = "";
 
-  // 1. Primary Engine: Autonomous RAG Agent (executes real tool calls for send_chat_message, search_knowledge_base, etc.)
-  try {
-    const { RAGAgent } = await import("@/features/rag/agent");
-    const agent = new RAGAgent();
-    reply = await agent.run(`Сотрудник ${userName}: ${content}`);
-  } catch (err) {
-    console.warn("RAGAgent execution failed, falling back to legacy parser:", err);
+  // 0. Pre-filter check for non-production questions
+  if (isOffTopicQuery(content)) {
+    reply = REJECTION_MESSAGE;
+  } else {
+    // 1. Primary Engine: Autonomous RAG Agent (executes real tool calls with role permissions)
+    try {
+      const { RAGAgent } = await import("@/features/rag/agent");
+      const agent = new RAGAgent({ userId, userRole });
+      reply = await agent.run(`Пользователь ${userName} (роль: ${userRole}): ${content}`);
+    } catch (err) {
+      console.warn("RAGAgent execution failed, falling back to legacy parser:", err);
+    }
   }
 
   // 2. Fallback if RAGAgent returns empty
@@ -191,12 +199,13 @@ export async function triggerAiPollHelper(actorUserId: string) {
 }
 
 function defaultCard(order: OrderCardInput) {
+  const cleanComment = parseOrderMetadata(order.comment).comment;
   return `[NERVA // СИГНАЛ: НОВЫЙ ЗАКАЗ №${order.number}]\n\n` +
     `Дата: ${order.order_date ?? "—"}\n` +
     `Срок: ${order.finish_date ?? "—"}\n` +
     `Номенклатура: ${order.nomenclature}\n` +
     (order.customer_order ? `Заказ: ${order.customer_order}\n` : "") +
-    (order.comment ? `Комментарий: ${order.comment}\n` : "") +
+    (cleanComment ? `Комментарий: ${cleanComment}\n` : "") +
     `\nКто берёт в работу — нажмите кнопку ниже или ответьте голосом Nerva.`;
 }
 

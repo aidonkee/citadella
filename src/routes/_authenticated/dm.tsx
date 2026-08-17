@@ -12,6 +12,8 @@ import { VoiceMicButton, blobToBase64 } from "@/components/voice-mic-button";
 import { transcribeAudio } from "@/lib/stt.functions";
 import { GeminiVoiceOrb } from "@/components/GeminiVoiceOrb";
 
+import { stripRawJsonMetadata } from "@/lib/order-metadata";
+
 export const Route = createFileRoute("/_authenticated/dm")({
   head: () => ({ meta: [{ title: "Командный центр Nerva — Nerva" }] }),
   component: DM,
@@ -215,7 +217,7 @@ function DM() {
                   <span>{m.is_ai ? "Nerva AI" : "Вы"}</span>
                   <span className="opacity-60 font-normal text-[10px]">· {new Date(m.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</span>
                 </div>
-                <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap"><ReactMarkdown>{m.content}</ReactMarkdown></div>
+                <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed whitespace-pre-wrap"><ReactMarkdown>{stripRawJsonMetadata(m.content)}</ReactMarkdown></div>
               </div>
             </div>
           );

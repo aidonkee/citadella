@@ -64,6 +64,9 @@ function Dashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [profiles, setProfiles] = useState<Record<string, string>>({});
   const [chats, setChats] = useState<Record<string, string>>({});
+  const [departmentChats, setDepartmentChats] = useState<{ id: string; name: string }[]>([]);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [viewMode, setViewMode] = useState<"matrix" | "kanban">("matrix");
   const [polling, setPolling] = useState(false);
   const [importing, setImporting] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -112,12 +115,17 @@ function Dashboard() {
       setOrders((data ?? []) as Order[]);
       const { data: ps } = await supabase.from("profiles").select("id, display_name");
       setProfiles(Object.fromEntries((ps ?? []).map((p) => [p.id, p.display_name])));
-      const { data: cs } = await supabase.from("chats").select("id, name");
+      const { data: cs } = await supabase.from("chats").select("id, name, is_dm").order("name");
       setChats(Object.fromEntries((cs ?? []).map((c) => [c.id, c.name])));
+      setDepartmentChats((cs ?? []).filter(c => !c.is_dm));
+
+      const { data: oa } = await supabase.from("order_assignments").select("*");
+      setAssignments(oa ?? []);
     };
     load();
     const ch = supabase.channel("dashboard-orders")
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "order_assignments" }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -197,104 +205,253 @@ function Dashboard() {
         <Metric label="Просрочено" value={counts.overdue} tone="rose" />
       </div>
 
-      {/* Orders Kanban View */}
+      {/* Orders View Card */}
       <Card className="border border-slate-200 bg-white shadow-sm overflow-hidden relative z-10 rounded-xl">
-        <CardHeader className="border-b border-slate-100 bg-slate-50/50 px-4 sm:px-6 py-4 flex flex-row items-center justify-between">
-          <CardTitle className="text-base font-semibold text-slate-800 tracking-tight">
-            Панель производства
-          </CardTitle>
+        <CardHeader className="border-b border-slate-100 bg-slate-50/50 px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-base font-semibold text-slate-800 tracking-tight">
+              Панель производства
+            </CardTitle>
+            <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2.5 py-0.5 rounded-full">
+              Заказов: {orders.length}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-lg border border-slate-200/80 w-full sm:w-auto">
+            <button
+              onClick={() => setViewMode("matrix")}
+              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                viewMode === "matrix"
+                  ? "bg-white text-slate-900 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Матрица по цехам
+            </button>
+            <button
+              onClick={() => setViewMode("kanban")}
+              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                viewMode === "kanban"
+                  ? "bg-white text-slate-900 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Канбан этапов
+            </button>
+          </div>
         </CardHeader>
-        <CardContent className="p-4 sm:p-6 bg-slate-50/30 overflow-x-auto min-h-[500px]">
-          <div className="flex flex-row gap-4 h-full min-w-max">
-            {["Новый", "Производство", "Логистика", "Готово"].map(stage => {
-              const stageOrders = orders.filter(o => parseOrderMetadata(o).stage === stage);
-              
-              return (
-                <div key={stage} className="w-[85vw] sm:w-[320px] shrink-0 flex flex-col h-full bg-slate-100/60 rounded-xl border border-slate-200/60 overflow-hidden">
-                  {/* Column Header */}
-                  <div className="p-3 border-b border-slate-200/60 bg-white flex items-center justify-between sticky top-0 z-10">
-                    <h3 className="font-bold text-slate-800 text-sm tracking-tight">{stage}</h3>
-                    <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-xs font-semibold">{stageOrders.length}</span>
-                  </div>
 
-                  {/* Column Content */}
-                  <div className="p-3 flex-1 overflow-y-auto space-y-3 min-h-[200px]">
-                    {stageOrders.map(o => {
-                      const meta = parseOrderMetadata(o);
-                      const priorityStyle = {
-                        "Срочно": "bg-red-50 text-red-700 border-red-200",
-                        "Высокий": "bg-orange-50 text-orange-700 border-orange-200",
-                        "Средний": "bg-blue-50 text-blue-700 border-blue-200",
-                        "Обычный": "bg-slate-50 text-slate-600 border-slate-200"
-                      }[meta.priority] || "bg-slate-50 text-slate-600 border-slate-200";
-
-                      return (
-                        <div 
-                          key={o.id} 
-                          className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col group relative"
-                        >
-                          <div className="flex justify-between items-start mb-2 gap-2 cursor-pointer" onClick={() => setEditingOrder(o)}>
-                            <div className="flex items-center gap-2">
-                              <span className="font-black text-slate-900 text-base sm:text-lg tracking-tight">#{o.number}</span>
-                            </div>
-                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md border ${priorityStyle}`}>
-                              {meta.priority}
-                            </span>
-                          </div>
-                          
-                          <div className="text-slate-800 text-sm font-semibold leading-snug mb-3 cursor-pointer" onClick={() => setEditingOrder(o)}>
+        <CardContent className="p-0 bg-white">
+          {viewMode === "matrix" ? (
+            <div className="overflow-x-auto min-h-[450px]">
+              <Table>
+                <TableHeader className="bg-slate-50 border-b border-slate-200">
+                  <TableRow>
+                    <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider py-3.5 px-4 whitespace-nowrap">№ Заказа</TableHead>
+                    <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider py-3.5 px-4 min-w-[200px]">Номенклатура</TableHead>
+                    <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider py-3.5 px-4 whitespace-nowrap">Срок</TableHead>
+                    <TableHead className="font-bold text-slate-800 text-xs uppercase tracking-wider py-3.5 px-4 whitespace-nowrap">Общий статус</TableHead>
+                    {departmentChats.map(c => (
+                      <TableHead key={c.id} className="font-bold text-slate-800 text-xs uppercase tracking-wider py-3.5 px-4 text-center whitespace-nowrap min-w-[130px]">
+                        {c.name}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {orders.map(o => {
+                    const meta = parseOrderMetadata(o);
+                    return (
+                      <TableRow key={o.id} className="hover:bg-slate-50/80 border-b border-slate-100 transition-colors">
+                        <TableCell className="font-bold text-slate-900 text-sm py-3 px-4 whitespace-nowrap">
+                          <button 
+                            onClick={() => setEditingOrder(o)}
+                            className="hover:text-blue-600 hover:underline font-mono text-base"
+                          >
+                            #{o.number}
+                          </button>
+                        </TableCell>
+                        <TableCell className="text-slate-800 text-xs font-semibold py-3 px-4 max-w-[280px]">
+                          <div className="line-clamp-2" title={o.nomenclature}>
                             {o.nomenclature}
                           </div>
-                          
-                          {meta.comment && (
-                            <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-md p-2 mb-3 leading-relaxed cursor-pointer" onClick={() => setEditingOrder(o)}>
-                              {meta.comment}
-                            </div>
+                          {meta.priority && meta.priority !== "Обычный" && (
+                            <span className="inline-block mt-1 text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                              {meta.priority}
+                            </span>
                           )}
+                        </TableCell>
+                        <TableCell className="text-slate-600 text-xs py-3 px-4 whitespace-nowrap font-medium">
+                          {o.finish_date ? new Date(o.finish_date).toLocaleDateString("ru-RU") : "—"}
+                        </TableCell>
+                        <TableCell className="py-3 px-4 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded-md text-xs font-bold border ${STATUS_COLOR[o.status]}`}>
+                            {STATUS_LABEL[o.status]}
+                          </span>
+                        </TableCell>
 
-                          <div className="flex justify-between items-end mt-auto pt-3 border-t border-slate-100">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Сотрудник</span>
-                              <span className="text-xs text-slate-600 font-medium truncate max-w-[100px]">
-                                {o.responsible_user_id ? (profiles[o.responsible_user_id] ?? "Сотрудник") : "—"}
-                              </span>
-                            </div>
-                            
-                            <select
-                              value={meta.stage}
-                              onChange={async (e) => {
-                                const newStage = e.target.value;
-                                const newComment = buildOrderMetadata({ ...meta, stage: newStage as any }, o.comment);
-                                toast.success(`Заказ #${o.number} перемещается...`);
-                                try {
-                                  await updateOrderDetails({
-                                    data: { order_id: o.id, comment: newComment }
-                                  });
-                                } catch (err: any) {
-                                  toast.error(err.message);
-                                }
-                              }}
-                              className="text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-medium py-1.5 px-2 rounded-md transition-colors cursor-pointer outline-none focus:ring-1 focus:ring-blue-500"
-                            >
-                              <option value="Новый">Новый ➜</option>
-                              <option value="Производство">Производство ➜</option>
-                              <option value="Логистика">Логистика ➜</option>
-                              <option value="Готово">Готово ➜</option>
-                            </select>
-                          </div>
-                        </div>
-                      )
-                    })}
-                    {stageOrders.length === 0 && (
-                      <div className="text-center p-4 text-sm text-slate-400 border-2 border-dashed border-slate-200 rounded-lg">
-                        Нет заказов
+                        {departmentChats.map(c => {
+                          let a = assignments.find(x => x.order_id === o.id && x.chat_id === c.id);
+                          const isDispatched = Boolean(
+                            a ||
+                            (Array.isArray(o.dispatched_chat_ids) && o.dispatched_chat_ids.includes(c.id)) ||
+                            o.chat_id === c.id
+                          );
+
+                          if (!isDispatched) {
+                            return (
+                              <TableCell key={c.id} className="text-center py-3 px-4 whitespace-nowrap">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-50 text-slate-400 border border-slate-200/50">
+                                  ⚪ Не назначался
+                                </span>
+                              </TableCell>
+                            );
+                          }
+
+                          if (!a) {
+                            a = { status: "new", responsible_user_id: null };
+                          }
+                          if (a.status === "completed") {
+                            return (
+                              <TableCell key={c.id} className="text-center py-3 px-4 whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                                  🟢 Сделано
+                                </span>
+                              </TableCell>
+                            );
+                          }
+                          if (a.status === "new" && !a.responsible_user_id) {
+                            return (
+                              <TableCell key={c.id} className="text-center py-3 px-4 whitespace-nowrap">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+                                  🟡 Ожидает отклика
+                                </span>
+                              </TableCell>
+                            );
+                          }
+                          const workerName = a.responsible_user_id ? profiles[a.responsible_user_id] : null;
+                          return (
+                            <TableCell key={c.id} className="text-center py-3 px-4 whitespace-nowrap">
+                              <div className="inline-flex flex-col items-center">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs">
+                                  🔴 В работе
+                                </span>
+                                {workerName && (
+                                  <span className="text-[10px] text-slate-600 font-semibold mt-0.5">
+                                    {workerName}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                          );
+                        })}
+                      </TableRow>
+                    );
+                  })}
+                  {orders.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4 + departmentChats.length} className="text-center py-8 text-slate-400 text-sm">
+                        Заказы отсутствуют
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="p-4 sm:p-6 bg-slate-50/30 overflow-x-auto min-h-[500px]">
+              <div className="flex flex-row gap-4 h-full min-w-max">
+                {["Новый", "Производство", "Логистика", "Готово"].map(stage => {
+                  const stageOrders = orders.filter(o => parseOrderMetadata(o).stage === stage);
+                  
+                  return (
+                    <div key={stage} className="w-[85vw] sm:w-[320px] shrink-0 flex flex-col h-full bg-slate-100/60 rounded-xl border border-slate-200/60 overflow-hidden">
+                      {/* Column Header */}
+                      <div className="p-3 border-b border-slate-200/60 bg-white flex items-center justify-between sticky top-0 z-10">
+                        <h3 className="font-bold text-slate-800 text-sm tracking-tight">{stage}</h3>
+                        <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-xs font-semibold">{stageOrders.length}</span>
                       </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+
+                      {/* Column Content */}
+                      <div className="p-3 flex-1 overflow-y-auto space-y-3 min-h-[200px]">
+                        {stageOrders.map(o => {
+                          const meta = parseOrderMetadata(o);
+                          const priorityStyle = {
+                            "Срочно": "bg-red-50 text-red-700 border-red-200",
+                            "Высокий": "bg-orange-50 text-orange-700 border-orange-200",
+                            "Средний": "bg-blue-50 text-blue-700 border-blue-200",
+                            "Обычный": "bg-slate-50 text-slate-600 border-slate-200"
+                          }[meta.priority] || "bg-slate-50 text-slate-600 border-slate-200";
+
+                          return (
+                            <div 
+                              key={o.id} 
+                              className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition-all flex flex-col group relative"
+                            >
+                              <div className="flex justify-between items-start mb-2 gap-2 cursor-pointer" onClick={() => setEditingOrder(o)}>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-slate-900 text-base sm:text-lg tracking-tight">#{o.number}</span>
+                                </div>
+                                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md border ${priorityStyle}`}>
+                                  {meta.priority}
+                                </span>
+                              </div>
+                              
+                              <div className="text-slate-800 text-sm font-semibold leading-snug mb-3 cursor-pointer" onClick={() => setEditingOrder(o)}>
+                                {o.nomenclature}
+                              </div>
+                              
+                              {meta.comment && (
+                                <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-md p-2 mb-3 leading-relaxed cursor-pointer" onClick={() => setEditingOrder(o)}>
+                                  {meta.comment}
+                                </div>
+                              )}
+
+                              <div className="flex justify-between items-end mt-auto pt-3 border-t border-slate-100">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Сотрудник</span>
+                                  <span className="text-xs text-slate-600 font-medium truncate max-w-[100px]">
+                                    {o.responsible_user_id ? (profiles[o.responsible_user_id] ?? "Сотрудник") : "—"}
+                                  </span>
+                                </div>
+                                
+                                <select
+                                  value={meta.stage}
+                                  onChange={async (e) => {
+                                    const newStage = e.target.value;
+                                    const newComment = buildOrderMetadata({ ...meta, stage: newStage as any }, o.comment);
+                                    toast.success(`Заказ #${o.number} перемещается...`);
+                                    try {
+                                      await updateOrderDetails({
+                                        data: { order_id: o.id, comment: newComment }
+                                      });
+                                    } catch (err: any) {
+                                      toast.error(err.message);
+                                    }
+                                  }}
+                                  className="text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-medium py-1.5 px-2 rounded-md transition-colors cursor-pointer outline-none focus:ring-1 focus:ring-blue-500"
+                                >
+                                  <option value="Новый">Новый ➜</option>
+                                  <option value="Производство">Производство ➜</option>
+                                  <option value="Логистика">Логистика ➜</option>
+                                  <option value="Готово">Готово ➜</option>
+                                </select>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {stageOrders.length === 0 && (
+                          <div className="text-center p-4 text-sm text-slate-400 border-2 border-dashed border-slate-200 rounded-lg">
+                            Нет заказов
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

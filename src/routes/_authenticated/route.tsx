@@ -35,61 +35,111 @@ function AuthedShell() {
     navigate({ to: "/auth", replace: true });
   };
 
-  const nav = [
-    ...(isManager ? [{ to: "/manager/new", icon: Plus, label: "Новый заказ" }] : []),
-    ...(isOwner ? [{ to: "/dashboard", icon: LayoutDashboard, label: "Дашборд" }] : []),
-    ...(isOwner ? [{ to: "/admin/inbox", icon: Inbox, label: "Входящие" }] : []),
-    { to: "/tables", icon: TableIcon, label: "Таблицы (Excel)" },
-    ...(!isManager ? [{ to: "/chats", icon: MessageSquare, label: "Чаты" }] : []),
-    ...(!isManager ? [{ to: "/dm", icon: BrainCircuit, label: "ИИ-ассистент Nerva" }] : []),
-    ...(isOwner ? [
-      { to: "/admin/orders", icon: FolderKanban, label: "Заказы" },
-      { to: "/admin/users", icon: Users, label: "Сотрудники" },
-      { to: "/admin/audit", icon: ScrollText, label: "Журнал аудита" },
-      { to: "/admin/settings", icon: Bell, label: "Уведомления" },
-    ] : []),
+  const navGroups = [
+    {
+      title: "Главное",
+      items: [
+        ...(isManager ? [{ to: "/manager/new", icon: Plus, label: "Новый заказ" }] : []),
+        ...(isOwner ? [{ to: "/dashboard", icon: LayoutDashboard, label: "Дашборд" }] : []),
+        ...(isOwner ? [{ to: "/admin/inbox", icon: Inbox, label: "Входящие" }] : []),
+      ]
+    },
+    {
+      title: "Операции",
+      items: [
+        { to: "/tables", icon: TableIcon, label: "Таблицы (Excel)" },
+        ...(!isManager ? [{ to: "/chats", icon: MessageSquare, label: "Чаты" }] : []),
+        ...(!isManager ? [{ to: "/dm", icon: BrainCircuit, label: "Ассистент Nerva" }] : []),
+      ]
+    },
+    ...(isOwner ? [{
+      title: "Администрирование",
+      items: [
+        { to: "/admin/orders", icon: FolderKanban, label: "Заказы" },
+        { to: "/admin/users", icon: Users, label: "Сотрудники" },
+        { to: "/admin/audit", icon: ScrollText, label: "Журнал аудита" },
+        { to: "/admin/settings", icon: Bell, label: "Уведомления" },
+      ]
+    }] : [])
   ];
 
   const NavList = () => (
-    <nav className="flex-1 p-3 space-y-1 overflow-y-auto soft-scrollbar">
-      {nav.map((n) => {
-        const active = loc.pathname.startsWith(n.to);
-        return (
-          <Link key={n.to} to={n.to as any} onClick={() => setOpen(false)}
-            className={`flex items-center justify-between px-3.5 py-2.5 rounded-none text-xs font-mono tracking-wider transition border ${active ? "bg-primary/15 text-primary font-bold border-primary border-l-4 shadow-[inset_0_0_12px_rgba(var(--primary),0.2)]" : "border-transparent text-muted-foreground hover:bg-card/80 hover:text-foreground hover:border-border"}`}>
-            <span className="flex items-center gap-3">
-              <n.icon className={`size-4 shrink-0 ${active ? "text-primary" : "opacity-70"}`} />
-              <span className="uppercase">{n.label}</span>
-            </span>
-          </Link>
-        );
-      })}
+    <nav className="flex-1 px-3 py-4 space-y-6 overflow-y-auto soft-scrollbar">
+      {navGroups.map((group, gIdx) => (
+        <div key={gIdx} className="space-y-1.5">
+          <div className="px-3 text-[11px] font-semibold tracking-wider text-muted-foreground/70 uppercase">
+            {group.title}
+          </div>
+          <div className="space-y-0.5">
+            {group.items.map((n) => {
+              const active = loc.pathname.startsWith(n.to);
+              return (
+                <Link
+                  key={n.to}
+                  to={n.to as any}
+                  onClick={() => setOpen(false)}
+                  className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all duration-150 ${
+                    active
+                      ? "bg-accent/10 text-accent dark:bg-emerald-500/10 dark:text-emerald-400 font-semibold shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                  }`}
+                >
+                  <n.icon className={`size-4 shrink-0 transition-colors ${active ? "text-accent dark:text-emerald-400" : "text-muted-foreground group-hover:text-foreground"}`} />
+                  <span className="truncate">{n.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 
   const SideContent = () => (
-    <div className="flex h-full flex-col bg-card/90 border-r border-primary/30 font-mono select-none backdrop-blur-md">
-      <div className="p-4 border-b border-primary/30 bg-background/50">
+    <div className="flex h-full flex-col bg-card border-r border-border font-sans select-none">
+      {/* Brand Header */}
+      <div className="p-4 border-b border-border/80 bg-card">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 text-base font-black tracking-widest text-foreground uppercase">
-            <span className="flex size-8 items-center justify-center rounded-none bg-primary text-primary-foreground border border-primary font-mono font-black shadow-none">N</span>
-            <span>NERVA // CORE</span>
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-emerald-500 dark:text-slate-950 font-bold text-base shadow-sm ring-1 ring-white/10">
+              N
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-sm tracking-tight text-foreground">NERVA</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-500 font-medium border border-emerald-500/20">v2.4</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">Система предприятия</p>
+            </div>
           </div>
-          <span className="text-[10px] px-1.5 py-0.5 bg-primary/20 text-primary border border-primary/40 font-bold tracking-tighter">v2.4</span>
-        </div>
-        <div className="mt-3 pt-2.5 border-t border-border/50 flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>УРОВЕНЬ ДОСТУПА:</span>
-          <span className="font-bold text-primary tracking-wider uppercase">{isOwner ? "[ ВЛАДЕЛЕЦ ]" : isManager ? "[ МЕНЕДЖЕР ]" : "[ СОТРУДНИК ]"}</span>
         </div>
       </div>
+
       <NavList />
-      <div className="p-3 border-t border-primary/30 space-y-2 bg-background/60">
-        <div className="flex items-center justify-between text-[11px] px-2 py-1 bg-card border border-border">
-          <span className="text-muted-foreground truncate max-w-[140px]" title={user?.email ?? ""}>{user?.email}</span>
-          <span className="size-2 bg-emerald-500 shrink-0" title="В сети" />
+
+      {/* User Footer */}
+      <div className="p-3 border-t border-border bg-card/50 space-y-2">
+        <div className="flex items-center justify-between p-2 rounded-lg bg-secondary/40 border border-border/60">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="size-2 rounded-full bg-emerald-500 shrink-0" title="В сети" />
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground truncate" title={user?.email ?? ""}>
+                {user?.email?.split('@')[0]}
+              </p>
+              <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wide">
+                {isOwner ? "Владелец" : isManager ? "Менеджер" : "Сотрудник"}
+              </p>
+            </div>
+          </div>
         </div>
-        <Button variant="outline" size="sm" className="w-full justify-between text-xs font-mono uppercase tracking-wider text-muted-foreground hover:text-destructive hover:bg-destructive/15 hover:border-destructive rounded-none border-border" onClick={logout}>
-          <span>[ ЗАВЕРШИТЬ СЕССИЮ ]</span>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-between text-xs font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg h-9"
+          onClick={logout}
+        >
+          <span>Выйти</span>
           <LogOut className="size-3.5" />
         </Button>
       </div>
@@ -97,28 +147,37 @@ function AuthedShell() {
   );
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-transparent text-foreground font-sans overflow-hidden">
+    <div className="flex flex-col h-[100dvh] w-full bg-background text-foreground font-sans overflow-hidden">
       <OwnerNotifications />
       <NervaAiWidget />
       
-      {/* Верхняя тактическая панель */}
-      <header className="h-10 shrink-0 border-b border-primary/30 bg-card/95 px-4 flex items-center justify-between text-xs font-mono select-none z-30">
-        <div className="flex items-center gap-4 sm:gap-6">
+      {/* Top Header Bar */}
+      <header className="h-12 shrink-0 border-b border-border bg-card px-4 flex items-center justify-between text-xs select-none z-30 shadow-xs">
+        <div className="flex items-center gap-3">
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="sm" className="md:hidden h-7 px-2 rounded-none border border-primary/40 text-primary font-mono text-[11px] uppercase tracking-wider">[ МЕНЮ ]</Button>
+              <Button variant="outline" size="sm" className="md:hidden h-8 px-2.5 rounded-lg border-border text-foreground text-xs gap-2">
+                <Menu className="size-4" />
+                <span>Меню</span>
+              </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-72 border-r border-primary/40 rounded-none bg-background"><SideContent /></SheetContent>
+            <SheetContent side="left" className="p-0 w-72 border-r border-border rounded-none bg-card">
+              <SideContent />
+            </SheetContent>
           </Sheet>
-          <div className="flex items-center gap-2 font-bold tracking-widest text-foreground">
-            <span className="size-2 bg-primary inline-block animate-pulse" />
-            <span className="hidden sm:inline">СИСТЕМА УПРАВЛЕНИЯ ПРЕДПРИЯТИЕМ:</span>
-            <span className="text-primary uppercase font-black">NERVA AI</span>
+          <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
+            <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="hidden sm:inline font-medium">Операционная система:</span>
+            <span className="text-foreground font-semibold">Nerva Enterprise</span>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-          <span className="hidden md:inline uppercase tracking-wider">ПОЛЬЗОВАТЕЛЬ: <strong className="text-foreground">{user?.email?.split('@')[0]}</strong></span>
-          <span className="border-l border-border pl-3 font-bold text-primary uppercase tracking-wider">{role || "USER"}</span>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="hidden md:inline text-muted-foreground">
+            Пользователь: <strong className="text-foreground font-medium">{user?.email}</strong>
+          </span>
+          <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground text-[11px] font-medium border border-border">
+            {isOwner ? "Владелец" : isManager ? "Менеджер" : role || "Пользователь"}
+          </span>
         </div>
       </header>
 
@@ -126,7 +185,7 @@ function AuthedShell() {
         <aside className="hidden md:flex w-64 lg:w-72 shrink-0 flex-col z-20">
           <SideContent />
         </aside>
-        <main className="flex-1 overflow-hidden min-w-0 relative z-10 flex flex-col bg-transparent">
+        <main className="flex-1 overflow-hidden min-w-0 relative z-10 flex flex-col bg-background">
           <Outlet />
         </main>
       </div>

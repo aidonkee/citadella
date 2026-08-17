@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { VoiceMicButton } from "@/components/voice-mic-button";
-import { parseOrderMetadata, buildOrderMetadata, type OrderPriority } from "@/lib/order-metadata";
+import { parseOrderMetadata, buildOrderMetadata, stripRawJsonMetadata, type OrderPriority } from "@/lib/order-metadata";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateOrderDetails, toggleOrderSectorStatus } from "@/lib/orders.functions";
 
@@ -75,7 +75,8 @@ function ChatPage() {
         claimUserIds = (cs ?? []).map(c => c.user_id).filter(Boolean);
       }
 
-      const allUserIds = [...new Set([...messageUserIds, ...claimUserIds])];
+      const assignUserIds = (orderIds.length ? (await supabase.from("order_assignments").select("responsible_user_id").in("order_id", orderIds)).data ?? [] : []).map(a => a.responsible_user_id).filter(Boolean) as string[];
+      const allUserIds = [...new Set([...messageUserIds, ...claimUserIds, ...assignUserIds])];
       if (allUserIds.length) {
         const { data: ps } = await supabase.from("profiles").select("id, display_name").in("id", allUserIds);
         setProfiles(Object.fromEntries((ps ?? []).map((p) => [p.id, p.display_name])));
@@ -179,7 +180,7 @@ function ChatPage() {
                     <span className="opacity-60 font-normal">· {new Date(m.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</span>
                   </div>
                   <div className="prose prose-sm dark:prose-invert max-w-none text-xs sm:text-sm leading-relaxed whitespace-pre-wrap">
-                    <ReactMarkdown>{m.content}</ReactMarkdown>
+                    <ReactMarkdown>{stripRawJsonMetadata(m.content)}</ReactMarkdown>
                   </div>
                   {m.kind === "order_card" && order && (() => {
                     const meta = parseOrderMetadata(order.comment);

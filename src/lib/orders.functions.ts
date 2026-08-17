@@ -168,6 +168,8 @@ export const claimOrder = createServerFn({ method: "POST" })
       next_follow_up_at: next,
     }).eq("id", data.order_id);
 
+    await syncOrderStatusWithAssignments(supabaseAdmin, data.order_id);
+
     const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", context.userId).single();
     const workerName = profile?.display_name ?? "Сотрудник";
 
@@ -297,6 +299,34 @@ export const rejectClaim = createServerFn({ method: "POST" })
   });
 
 
+export async function syncOrderStatusWithAssignments(supabaseAdmin: any, orderId: string) {
+  const { data: assignments } = await supabaseAdmin
+    .from("order_assignments")
+    .select("status")
+    .eq("order_id", orderId);
+
+  if (!assignments || assignments.length === 0) return;
+
+  const statuses = assignments.map((a: any) => a.status);
+  const allCompleted = statuses.every((s: string) => s === "completed");
+  const anyStalled = statuses.some((s: string) => s === "stalled");
+
+  let overallStatus: "new" | "in_progress" | "stalled" | "completed" = "in_progress";
+  if (allCompleted) {
+    overallStatus = "completed";
+  } else if (anyStalled) {
+    overallStatus = "stalled";
+  } else if (statuses.every((s: string) => s === "new")) {
+    overallStatus = "new";
+  }
+
+  await supabaseAdmin.from("orders").update({
+    status: overallStatus,
+    last_update_at: new Date().toISOString(),
+    ...(allCompleted ? { finish_date: new Date().toISOString().split("T")[0] } : {}),
+  }).eq("id", orderId);
+}
+
 export const updateOrderStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) => z.object({
@@ -316,12 +346,15 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
     }).eq("order_id", data.order_id).eq("chat_id", data.chat_id);
     if (error) throw new Error(error.message);
 
+    await syncOrderStatusWithAssignments(supabaseAdmin, data.order_id);
+
     const { data: prev } = await supabaseAdmin.from("orders").select("number").eq("id", data.order_id).single();
 
     await logAudit({ actor_user_id: context.userId, action: "order.status_changed", entity_type: "order", entity_id: data.order_id, details: { from: prevStatus, to: data.status, number: prev?.number, chat_id: data.chat_id } });
     await notifyOwners({ title: `Статус заказа ${prev?.number ?? ""}`, body: `${prevStatus ?? "—"} → ${data.status}`, link: `/chats/${data.chat_id}`, kind: "status_change" });
     return { ok: true };
   });
+
 
 export const sendMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -569,3 +602,97 @@ export const importOrders = createServerFn({ method: "POST" })
     
     return { ok: true, imported: toInsert.length, skipped: data.length - toInsert.length };
   });
+
+export const voiceDispatchOrder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) => z.object({
+    text: z.string().min(1),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { aiGenerateOrderCard } = await import("./orders.server");
+    const { logAudit } = await import("@/lib/audit.server");
+    
+    const textLower = data.text.toLowerCase();
+    
+    // Fetch all non-dispatched orders
+    const { data: undispatched } = await supabaseAdmin.from("orders").select("*").eq("is_dispatched", false);
+    if (!undispatched || undispatched.length === 0) {
+      return { ok: false, message: "Нет свободных нераспределённых заказов" };
+    }
+
+    // Try matching order by number or digits
+    const digitsMatch = textLower.match(/\b\d+\b/);
+    let targetOrder = undispatched.find(o => textLower.includes(o.number.toLowerCase()));
+    if (!targetOrder && digitsMatch) {
+      targetOrder = undispatched.find(o => o.number.includes(digitsMatch[0]));
+    }
+    if (!targetOrder) {
+      targetOrder = undispatched[0];
+    }
+
+    // Fetch all active group chats
+    const { data: chats } = await supabaseAdmin.from("chats").select("id, name").eq("is_dm", false);
+    const matchedChatIds: string[] = [];
+    const matchedChatNames: string[] = [];
+
+    for (const c of chats ?? []) {
+      const nameLower = c.name.toLowerCase();
+      const tokens = nameLower.split(/[\s,._\-№#()]+/).filter(t => t.length >= 2);
+      if (textLower.includes(nameLower) || tokens.some(t => textLower.includes(t))) {
+        matchedChatIds.push(c.id);
+        matchedChatNames.push(c.name);
+      }
+    }
+
+    if (matchedChatIds.length === 0) {
+      return {
+        ok: false,
+        message: `Заказ №${targetOrder.number} найден, но цеха не распознаны в фразе "${data.text}". Назовите цеха (например: Дерево, Ткань).`,
+        orderNumber: targetOrder.number,
+      };
+    }
+
+    // Dispatch order card to matched chats
+    const orderInput = {
+      number: targetOrder.number, order_date: targetOrder.order_date, finish_date: targetOrder.finish_date,
+      nomenclature: targetOrder.nomenclature, customer_order: targetOrder.customer_order, comment: targetOrder.comment,
+      chat_id: null, follow_up_interval_minutes: targetOrder.follow_up_interval_minutes,
+    };
+    const content = await aiGenerateOrderCard(orderInput);
+    let firstMsgId: string | null = null;
+
+    for (const cid of matchedChatIds) {
+      const { data: m } = await supabaseAdmin.from("messages").insert({
+        chat_id: cid, is_ai: true, content, order_id: targetOrder.id, kind: "order_card",
+      }).select().single();
+      if (!firstMsgId && m) firstMsgId = m.id;
+      await logAudit({ actor_user_id: context.userId, action: "message.ai_sent", entity_type: "message", entity_id: m?.id ?? null, details: { chat_id: cid, kind: "order_card", order_id: targetOrder.id } });
+    }
+
+    await supabaseAdmin.from("orders").update({
+      is_dispatched: true,
+      dispatched_at: new Date().toISOString(),
+      dispatched_chat_ids: matchedChatIds,
+      ai_message_id: firstMsgId,
+      status: "new",
+    }).eq("id", targetOrder.id);
+
+    const assignments = matchedChatIds.map(cid => ({
+      order_id: targetOrder.id,
+      chat_id: cid,
+      status: "new" as const,
+    }));
+    await supabaseAdmin.from("order_assignments").upsert(assignments, { onConflict: "order_id,chat_id" });
+
+    await logAudit({ actor_user_id: context.userId, action: "order.dispatched", entity_type: "order", entity_id: targetOrder.id, details: { chat_ids: matchedChatIds, number: targetOrder.number, voice: true } });
+
+    return {
+      ok: true,
+      message: `Заказ №${targetOrder.number} успешно распределен в цеха: ${matchedChatNames.join(", ")}`,
+      orderNumber: targetOrder.number,
+      chats: matchedChatNames,
+    };
+  });
+

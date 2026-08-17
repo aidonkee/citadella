@@ -24,29 +24,45 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-transparent p-4 text-foreground flex items-center justify-center">
+    <div className="relative min-h-screen overflow-hidden bg-background p-4 text-foreground flex items-center justify-center font-sans">
+      {/* Ambient Soft Glow Background */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
       <div className="relative z-10 w-full max-w-md">
-        <Card className="border border-border/80 bg-card/90 shadow-2xl overflow-hidden rounded-none">
-          <CardHeader className="space-y-2 relative z-10 p-5 border-b border-border/60">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CardTitle className="text-2xl font-bold tracking-tight text-foreground uppercase">NERVA</CardTitle>
-                <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 bg-primary/20 text-primary border border-primary/40">SYS::v2.0</span>
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground font-mono uppercase">Авторизация в системе</div>
+        <div className="text-center mb-6 space-y-2">
+          <div className="inline-flex items-center justify-center size-12 rounded-2xl bg-slate-900 text-white dark:bg-emerald-500 dark:text-slate-950 font-bold text-xl shadow-lg ring-1 ring-white/10 mb-2">
+            N
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Nerva Enterprise</h1>
+          <p className="text-xs text-muted-foreground">Система управления производством и заказами</p>
+        </div>
+
+        <Card className="border border-border bg-card/95 shadow-xl rounded-2xl overflow-hidden backdrop-blur-xl">
+          <CardHeader className="space-y-1.5 p-6 pb-4 border-b border-border/60">
+            <CardTitle className="text-lg font-semibold text-foreground">Вход в систему</CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">
+              Введите данные вашей учётной записи для авторизации
+            </CardDescription>
           </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="login">
-            <TabsList className="grid grid-cols-2 w-full">
-              <TabsTrigger value="login">Вход</TabsTrigger>
-              <TabsTrigger value="register">Первый владелец</TabsTrigger>
-            </TabsList>
-            <TabsContent value="login"><LoginForm /></TabsContent>
-            <TabsContent value="register"><RegisterForm /></TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+          <CardContent className="p-6 pt-4">
+            <Tabs defaultValue="login" className="w-full">
+              <TabsList className="grid grid-cols-2 w-full p-1 bg-secondary/60 rounded-xl mb-4">
+                <TabsTrigger value="login" className="rounded-lg text-xs font-medium py-1.5">
+                  Вход
+                </TabsTrigger>
+                <TabsTrigger value="register" className="rounded-lg text-xs font-medium py-1.5">
+                  Первый владелец
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="login"><LoginForm /></TabsContent>
+              <TabsContent value="register"><RegisterForm /></TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          © {new Date().getFullYear()} Nerva Systems. Защищенный корпоративный доступ.
+        </p>
       </div>
     </div>
   );
@@ -79,11 +95,25 @@ function LoginForm() {
     }
   };
   return (
-    <form onSubmit={onSubmit} className="space-y-4 mt-4">
-      <div className="space-y-2"><Label>Логин</Label><div className="relative"><UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" required value={login} onChange={(e) => setLogin(e.target.value)} autoFocus placeholder="ivanov или email" /></div></div>
-      <div className="space-y-2"><Label>Пароль</Label><div className="relative"><Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div></div>
-      <Button type="submit" className="w-full" disabled={loading}>{loading ? "Входим…" : "Войти"}</Button>
-      <p className="text-xs text-muted-foreground text-center">Учётки сотрудников создаёт владелец в админ-панели.</p>
+    <form onSubmit={onSubmit} className="space-y-4 mt-2">
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium text-foreground">Логин или Email</Label>
+        <div className="relative">
+          <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" required value={login} onChange={(e) => setLogin(e.target.value)} autoFocus placeholder="ivanov или email@company.ru" />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium text-foreground">Пароль</Label>
+        <div className="relative">
+          <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+        </div>
+      </div>
+      <Button type="submit" className="w-full h-10 text-xs font-semibold rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 dark:text-slate-950 shadow-sm transition-all" disabled={loading}>
+        {loading ? "Авторизация…" : "Войти в систему"}
+      </Button>
+      <p className="text-[11px] text-muted-foreground text-center pt-1">Учётные записи сотрудников создаются владельцем в админ-панели.</p>
     </form>
   );
 }
@@ -102,7 +132,7 @@ function RegisterForm() {
     });
     try {
       if (error) {
-        if (error.message.toLowerCase().includes("already")) toast.error("Пользователь уже есть — откройте вкладку «Вход».");
+        if (error.message.toLowerCase().includes("already")) toast.error("Пользователь уже существует — откройте вкладку «Вход».");
         else toast.error(error.message);
         return;
       }
@@ -122,12 +152,33 @@ function RegisterForm() {
     }
   };
   return (
-    <form onSubmit={onSubmit} className="space-y-4 mt-4">
-      <div className="space-y-2"><Label>Имя</Label><div className="relative"><UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" required value={name} onChange={(e) => setName(e.target.value)} /></div></div>
-      <div className="space-y-2"><Label>Email</Label><div className="relative"><Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></div></div>
-      <div className="space-y-2"><Label>Пароль</Label><div className="relative"><Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} /></div></div>
-      <Button type="submit" className="w-full" disabled={loading}>{loading ? "Создаём…" : "Зарегистрироваться как владелец"}</Button>
-      <p className="text-xs text-muted-foreground text-center">Только первый аккаунт становится владельцем.</p>
+    <form onSubmit={onSubmit} className="space-y-4 mt-2">
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium text-foreground">Ваше имя</Label>
+        <div className="relative">
+          <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Алексей Смирнов" />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium text-foreground">Рабочий Email</Label>
+        <div className="relative">
+          <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@company.ru" />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-xs font-medium text-foreground">Пароль</Label>
+        <div className="relative">
+          <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
+        </div>
+      </div>
+      <Button type="submit" className="w-full h-10 text-xs font-semibold rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 dark:text-slate-950 shadow-sm transition-all" disabled={loading}>
+        {loading ? "Регистрация…" : "Зарегистрироваться как владелец"}
+      </Button>
+      <p className="text-[11px] text-muted-foreground text-center pt-1">Первый зарегистрированный аккаунт получает права владельца.</p>
     </form>
   );
 }
+

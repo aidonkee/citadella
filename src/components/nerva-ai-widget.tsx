@@ -1,12 +1,11 @@
 import { useState, useRef } from "react";
 import { useRouter } from "@tanstack/react-router";
-import { BrainCircuit, Loader2, MessageSquare, Send, X, CheckCircle2 } from "lucide-react";
+import { MessageSquare, Send, X, CheckCircle2, Mic, Square, Sparkles, Command, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { askNervaDirect } from "@/lib/orders.functions";
 import { transcribeAudio } from "@/lib/stt.functions";
-import { GeminiVoiceOrb } from "@/components/GeminiVoiceOrb";
 import { blobToBase64 } from "@/components/voice-mic-button";
 
 export function NervaAiWidget() {
@@ -17,7 +16,7 @@ export function NervaAiWidget() {
   const [messages, setMessages] = useState<Array<{ role: "user" | "ai"; content: string; updatedOrder?: string }>>([
     {
       role: "ai",
-      content: "[NERVA // SYS]: Приветствую! Я автономный ИИ-агент Nerva.\n\nГоворите или пишите любые вопросы по предприятию, создавайте заказы, обновляйте статусы в свободной форме.",
+      content: "Здравствуйте! Я ассистент Nerva.\n\nЗадавайте вопросы по заказам, управлению предприятием или отдавайте команды голосом.",
     },
   ]);
   const router = useRouter();
@@ -37,12 +36,12 @@ export function NervaAiWidget() {
         ...prev,
         {
           role: "ai",
-          content: res?.reply || "[NERVA]: Запрос выполнен. Состояние системы обновлено.",
+          content: res?.reply || "Запрос выполнен. Данные обновлены.",
           updatedOrder: res?.updatedOrder,
         },
       ]);
       if (res?.updatedOrder) {
-        toast.success(`[NERVA]: Обновлен заказ №${res.updatedOrder} на дашборде`);
+        toast.success(`Обновлен заказ №${res.updatedOrder}`);
         router.invalidate();
       }
     } catch (err: any) {
@@ -51,7 +50,7 @@ export function NervaAiWidget() {
         ...prev,
         {
           role: "ai",
-          content: "[NERVA // ERROR]: Ошибка связи с сервером. Введите команду повторно.",
+          content: "Не удалось связаться с сервером. Попробуйте ещё раз.",
         },
       ]);
     } finally {
@@ -109,38 +108,48 @@ export function NervaAiWidget() {
     }
   };
 
+  const cleanContent = (str: string) => {
+    return str
+      .replace(/^\[NERVA \/\/ SYS\]:\s*/i, "")
+      .replace(/^\[NERVA\]:\s*/i, "")
+      .replace(/^\[NERVA \/\/ ERROR\]:\s*/i, "");
+  };
+
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3 font-sans select-none">
       {open && (
-        <div className="w-80 sm:w-[26rem] rounded-2xl border border-border/60 bg-card/95 shadow-2xl p-4 flex flex-col gap-3 backdrop-blur-xl max-h-[600px]">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-border/40 pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <BrainCircuit className="w-5 h-5 text-primary" />
+        <div className="w-80 sm:w-[26rem] rounded-2xl border border-border bg-card shadow-2xl p-4 flex flex-col gap-3 backdrop-blur-2xl max-h-[620px] transition-all animate-in fade-in zoom-in-95 duration-200">
+          {/* Executive Header */}
+          <div className="flex items-center justify-between border-b border-border/60 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-slate-900 text-white dark:bg-emerald-500/15 dark:text-emerald-400 flex items-center justify-center border border-border">
+                <Sparkles className="w-4 h-4" />
               </div>
               <div>
-                <div className="font-semibold text-sm text-foreground">ИИ Ассистент</div>
-                <div className="text-[11px] text-muted-foreground font-medium">Nerva AI</div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-sm text-foreground">Nerva Assistant</span>
+                  <span className="size-2 rounded-full bg-emerald-500" title="В сети" />
+                </div>
+                <div className="text-[11px] text-muted-foreground">Интеллектуальный помощник</div>
               </div>
             </div>
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="icon"
-                className="w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary"
+                className="w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary"
                 onClick={() => {
                   setOpen(false);
                   router.navigate({ to: "/dm" });
                 }}
-                title="Развернуть"
+                title="Развернуть полный чат"
               >
                 <MessageSquare className="w-4 h-4" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                className="w-8 h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary"
+                className="w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary"
                 onClick={() => setOpen(false)}
               >
                 <X className="w-4 h-4" />
@@ -148,35 +157,60 @@ export function NervaAiWidget() {
             </div>
           </div>
 
-          {/* 3D Сфера (Глобус) */}
-          <div className="flex flex-col items-center justify-center py-2">
-            <GeminiVoiceOrb
-              isRecording={isRecording}
-              isProcessing={loading}
-              onPressStart={handlePressStart}
-              onPressEnd={handlePressEnd}
-              disabled={loading}
-            />
+          {/* Voice Command Bar */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/40 border border-border/80">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onMouseDown={handlePressStart}
+                onMouseUp={handlePressEnd}
+                onTouchStart={handlePressStart}
+                onTouchEnd={handlePressEnd}
+                disabled={loading}
+                className={`flex size-9 items-center justify-center rounded-xl transition-all ${
+                  isRecording
+                    ? "bg-rose-500 text-white animate-pulse shadow-md scale-105"
+                    : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20"
+                }`}
+              >
+                {isRecording ? <Square className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-foreground truncate">
+                  {isRecording ? "Идёт запись голоса..." : "Голосовой ввод"}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {isRecording ? "Отпустите для отправки" : "Удерживайте микрофон для записи"}
+                </p>
+              </div>
+            </div>
+            {isRecording && (
+              <div className="flex items-center gap-1">
+                <span className="w-1 h-4 bg-rose-500 rounded-full animate-bounce" />
+                <span className="w-1 h-6 bg-rose-500 rounded-full animate-bounce [animation-delay:0.2s]" />
+                <span className="w-1 h-3 bg-rose-500 rounded-full animate-bounce [animation-delay:0.4s]" />
+              </div>
+            )}
           </div>
 
-          {/* Messages body */}
-          <div className="flex-1 overflow-y-auto space-y-3 pr-2 py-1 soft-scrollbar min-h-[160px] max-h-[260px] text-sm">
+          {/* Messages Timeline */}
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1 py-1 soft-scrollbar min-h-[160px] max-h-[260px] text-xs">
             {messages.map((m, idx) => (
               <div
                 key={idx}
                 className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
               >
                 <div
-                  className={`rounded-2xl px-4 py-2.5 max-w-[90%] shadow-sm leading-relaxed whitespace-pre-wrap ${
+                  className={`rounded-xl px-3.5 py-2.5 max-w-[92%] leading-relaxed whitespace-pre-wrap ${
                     m.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-sm"
-                      : "bg-secondary/50 border border-border/50 text-foreground rounded-bl-sm"
+                      ? "bg-slate-900 text-white dark:bg-emerald-500/20 dark:text-emerald-100 dark:border dark:border-emerald-500/30 rounded-br-xs"
+                      : "bg-secondary/60 border border-border text-foreground rounded-bl-xs"
                   }`}
                 >
-                  {m.content.replace("[NERVA // SYS]: ", "").replace("[NERVA]: ", "").replace("[NERVA // ERROR]: ", "")}
+                  {cleanContent(m.content)}
                 </div>
                 {m.updatedOrder && (
-                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-500/20">
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 font-medium bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     Заказ №{m.updatedOrder} обновлён
                   </div>
@@ -184,50 +218,52 @@ export function NervaAiWidget() {
               </div>
             ))}
             {loading && (
-              <div className="flex items-center gap-2 text-sm text-primary animate-pulse pl-2 py-1">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Обработка...</span>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse pl-2 py-1">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
+                <span>Nerva обрабатывает запрос...</span>
               </div>
             )}
           </div>
 
-          {/* Input Bar */}
-          <div className="flex items-center gap-2 pt-3 border-t border-border/40">
+          {/* Text Input Bar */}
+          <div className="flex items-center gap-2 pt-2 border-t border-border/60">
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-              placeholder="Спросите или поручите..."
+              placeholder="Спросить или дать поручение..."
               disabled={loading}
-              className="h-10 text-sm bg-secondary/30 border-border focus-visible:ring-primary rounded-xl"
+              className="h-9 text-xs bg-secondary/30 border-border focus-visible:ring-emerald-500 rounded-lg"
             />
             <Button
               size="icon"
-              className="w-10 h-10 rounded-xl shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-all"
+              className="w-9 h-9 rounded-lg shrink-0 bg-slate-900 hover:bg-slate-800 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 dark:text-slate-950 shadow-xs transition-all"
               onClick={() => handleSend()}
               disabled={loading || !query.trim()}
             >
-              <Send className="w-4 h-4 ml-0.5" />
+              <Send className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* Floating Trigger Button */}
+      {/* Floating Executive Trigger Button */}
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="group relative flex items-center gap-3 rounded-full border border-primary/20 bg-card hover:bg-card/90 px-4 py-3 text-foreground shadow-lg transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-primary/10"
+        className="group relative flex items-center gap-2.5 rounded-full border border-border bg-card hover:bg-card/90 px-4 py-2.5 text-foreground shadow-lg transition-all duration-200 hover:shadow-xl"
       >
-        <span className="absolute -top-0.5 -right-0.5 flex w-3 h-3">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-60" />
-          <span className="relative inline-flex rounded-full w-3 h-3 bg-primary" />
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
         </span>
-        <div className="flex w-7 h-7 items-center justify-center rounded-full bg-primary/10 text-primary transition-transform group-hover:rotate-12">
-          <BrainCircuit className="w-4 h-4" />
-        </div>
-        <span className="font-semibold text-sm tracking-tight pr-1">ИИ Ассистент</span>
+        <Sparkles className="w-4 h-4 text-emerald-500 transition-transform group-hover:scale-110" />
+        <span className="font-medium text-xs tracking-tight">Nerva Assistant</span>
+        <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground font-mono">
+          ⌘K
+        </span>
       </button>
     </div>
   );
 }
+

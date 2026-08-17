@@ -8,6 +8,19 @@ export interface OrderMetadata {
   completed_sectors?: Record<string, boolean>;
 }
 
+export function stripRawJsonMetadata(text: string | null | undefined): string {
+  if (!text) return "";
+  let s = String(text);
+  // Strip any json block containing __nerva_meta (including multi-line and nested braces)
+  s = s.replace(/\{[\s\S]*?"__nerva_meta"[\s\S]*?\}\}/g, "");
+  s = s.replace(/\{[\s\S]*?"__nerva_meta"[\s\S]*?\}/g, "");
+  // Strip any orphaned "Комментарий:\n" or "Комментарий: —" lines left empty
+  s = s.replace(/Комментарий:\s*(\n|—|$)/gi, "");
+  // Clean up extra blank lines
+  s = s.replace(/\n\s*\n\s*\n/g, "\n\n");
+  return s.trim();
+}
+
 export function parseOrderMetadata(orderOrComment: any): OrderMetadata {
   let stage: OrderStage = "Новый";
   let priority: OrderPriority = "Обычный";
@@ -56,6 +69,9 @@ export function parseOrderMetadata(orderOrComment: any): OrderMetadata {
       comment = orderOrComment;
     }
   }
+
+  // Ensure comment is strictly human-readable and free of JSON metadata
+  comment = stripRawJsonMetadata(comment);
 
   return { stage, priority, comment, completed_sectors };
 }
