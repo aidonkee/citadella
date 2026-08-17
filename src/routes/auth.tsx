@@ -5,10 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { bootstrapOwner } from "@/lib/users.functions";
-import { Bot, Lock, Mail, Sparkles, UserRound, BrainCircuit, Activity } from "lucide-react";
+import { Lock, UserRound } from "lucide-react";
 
 const LOGIN_DOMAIN = "orderflow.local";
 
@@ -45,18 +43,7 @@ function AuthPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-6 pt-4">
-            <Tabs defaultValue="login" className="w-full">
-              <TabsList className="grid grid-cols-2 w-full p-1 bg-secondary/60 rounded-xl mb-4">
-                <TabsTrigger value="login" className="rounded-lg text-xs font-medium py-1.5">
-                  Вход
-                </TabsTrigger>
-                <TabsTrigger value="register" className="rounded-lg text-xs font-medium py-1.5">
-                  Первый владелец
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="login"><LoginForm /></TabsContent>
-              <TabsContent value="register"><RegisterForm /></TabsContent>
-            </Tabs>
+            <LoginForm />
           </CardContent>
         </Card>
 
@@ -117,68 +104,3 @@ function LoginForm() {
     </form>
   );
 }
-
-function RegisterForm() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    const { data: signUp, error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { display_name: name }, emailRedirectTo: window.location.origin },
-    });
-    try {
-      if (error) {
-        if (error.message.toLowerCase().includes("already")) toast.error("Пользователь уже существует — откройте вкладку «Вход».");
-        else toast.error(error.message);
-        return;
-      }
-      if (!signUp.session) {
-        const { error: sErr } = await supabase.auth.signInWithPassword({ email, password });
-        if (sErr) { toast.error(sErr.message); return; }
-      }
-      try {
-        await Promise.race([
-          bootstrapOwner(),
-          new Promise((resolve) => setTimeout(resolve, 2500)),
-        ]);
-      } catch { /* first owner bootstrap is best-effort */ }
-      window.location.assign("/dashboard");
-    } finally {
-      setLoading(false);
-    }
-  };
-  return (
-    <form onSubmit={onSubmit} className="space-y-4 mt-2">
-      <div className="space-y-1.5">
-        <Label className="text-xs font-medium text-foreground">Ваше имя</Label>
-        <div className="relative">
-          <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Алексей Смирнов" />
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <Label className="text-xs font-medium text-foreground">Рабочий Email</Label>
-        <div className="relative">
-          <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@company.ru" />
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <Label className="text-xs font-medium text-foreground">Пароль</Label>
-        <div className="relative">
-          <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
-        </div>
-      </div>
-      <Button type="submit" className="w-full h-10 text-xs font-semibold rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 dark:text-slate-950 shadow-sm transition-all" disabled={loading}>
-        {loading ? "Регистрация…" : "Зарегистрироваться как владелец"}
-      </Button>
-      <p className="text-[11px] text-muted-foreground text-center pt-1">Первый зарегистрированный аккаунт получает права владельца.</p>
-    </form>
-  );
-}
-

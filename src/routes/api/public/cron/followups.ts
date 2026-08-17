@@ -2,10 +2,25 @@ import { createFileRoute } from "@tanstack/react-router";
 import { generateText } from "ai";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 
+function isAuthorizedCron(request: Request): boolean {
+  // Vercel Cron добавляет заголовок x-vercel-cron (если cron задан в vercel.json)
+  if (request.headers.get("x-vercel-cron")) return true;
+  // Для локальных/внешних запусков — секрет в заголовке Authorization
+  const secret = process.env.CRON_SECRET;
+  if (secret) {
+    const auth = request.headers.get("authorization") ?? "";
+    return auth === `Bearer ${secret}`;
+  }
+  return false;
+}
+
 export const Route = createFileRoute("/api/public/cron/followups")({
   server: {
     handlers: {
-      POST: async () => {
+      POST: async ({ request }) => {
+        if (!isAuthorizedCron(request)) {
+          return new Response("Unauthorized", { status: 401 });
+        }
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { syncOrderStatusWithAssignments, assignmentsTableExists } = await import("@/lib/assignments.server");
         const now = new Date();

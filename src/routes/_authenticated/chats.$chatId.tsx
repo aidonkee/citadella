@@ -178,7 +178,7 @@ function ChatPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] min-w-0 overflow-hidden">
+    <div className="flex h-[100dvh] min-w-0 overflow-hidden">
       <div className="hidden md:block"><ChatsSidebar activeId={chatId} /></div>
       <div className="flex-1 flex flex-col min-w-0 p-2 sm:p-4 bg-slate-100/40">
         <Card className="flex-1 flex flex-col overflow-hidden border-slate-200/80 shadow-md bg-white">

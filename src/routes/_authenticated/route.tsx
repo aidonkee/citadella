@@ -25,7 +25,9 @@ function AuthedShell() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (role === "manager" && loc.pathname !== "/manager/new") {
+    // Менеджер не принудительно сидит на /manager/new: доступны его страницы
+    const allowedForManager = ["/manager/new", "/admin/inbox", "/tables"];
+    if (role === "manager" && !allowedForManager.some((p) => loc.pathname.startsWith(p))) {
       navigate({ to: "/manager/new", replace: true });
     }
   }, [role, loc.pathname, navigate]);
@@ -107,7 +109,7 @@ function AuthedShell() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-sm tracking-tight text-foreground">NERVA</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/10 text-emerald-500 font-medium border border-emerald-500/20">v2.4</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-medium border border-emerald-500/20">v2.4</span>
               </div>
               <p className="text-[11px] text-muted-foreground">Система предприятия</p>
             </div>
@@ -176,7 +178,7 @@ function AuthedShell() {
             Пользователь: <strong className="text-foreground font-medium">{user?.email}</strong>
           </span>
           <span className="px-2.5 py-1 rounded-full bg-secondary text-foreground text-[11px] font-medium border border-border">
-            {isOwner ? "Владелец" : isManager ? "Менеджер" : role || "Пользователь"}
+            {isOwner ? "Владелец" : isManager ? "Менеджер" : "Сотрудник"}
           </span>
         </div>
       </header>

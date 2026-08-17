@@ -40,55 +40,56 @@ function DM() {
 
   useEffect(() => {
     if (!user) return;
+    let disposed = false;
+    const oChannel = supabase.channel(`active-order-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "order_assignments", filter: `responsible_user_id=eq.${user.id}` }, fetchActiveOrder)
+      .subscribe();
+
+    const fetchActiveOrder = async () => {
+      const { data: assigns, error: assignErr } = await supabase
+        .from("order_assignments")
+        .select("order_id")
+        .eq("responsible_user_id", user.id)
+        .in("status", ["in_progress", "stalled", "blocked"])
+        .order("updated_at", { ascending: false })
+        .limit(1);
+
+      if (assignErr) {
+        // До миграции: legacy-схема — активный заказ по responsible_user_id
+        const { data: legacyOrders } = await supabase
+          .from("orders")
+          .select("number, nomenclature, status")
+          .eq("responsible_user_id", user.id)
+          .in("status", ["in_progress", "stalled", "new"])
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (!disposed) setActiveOrder(legacyOrders?.[0] ?? null);
+        return;
+      }
+
+      if (assigns && assigns.length > 0) {
+        const { data: orders } = await supabase
+          .from("orders")
+          .select("number, nomenclature, status")
+          .eq("id", assigns[0].order_id)
+          .limit(1);
+        if (!disposed) setActiveOrder(orders?.[0] ?? null);
+      } else if (!disposed) {
+        setActiveOrder(null);
+      }
+    };
+
     const init = async () => {
       const { data: dm } = await supabase.from("chats").select("id").eq("is_dm", true).eq("dm_user_id", user.id).maybeSingle();
-      if (dm) setDmId(dm.id);
-
-      // Загрузка текущей активной задачи (per-assignment архитектура)
-      const fetchActiveOrder = async () => {
-        const { data: assigns, error: assignErr } = await supabase
-          .from("order_assignments")
-          .select("order_id")
-          .eq("responsible_user_id", user.id)
-          .in("status", ["in_progress", "stalled", "blocked"])
-          .order("updated_at", { ascending: false })
-          .limit(1);
-
-        if (assignErr) {
-          // До миграции: legacy-схема — активный заказ по responsible_user_id
-          const { data: legacyOrders } = await supabase
-            .from("orders")
-            .select("number, nomenclature, status")
-            .eq("responsible_user_id", user.id)
-            .in("status", ["in_progress", "stalled", "new"])
-            .order("created_at", { ascending: false })
-            .limit(1);
-          setActiveOrder(legacyOrders?.[0] ?? null);
-          return;
-        }
-
-        if (assigns && assigns.length > 0) {
-          const { data: orders } = await supabase
-            .from("orders")
-            .select("number, nomenclature, status")
-            .eq("id", assigns[0].order_id)
-            .limit(1);
-          setActiveOrder(orders?.[0] ?? null);
-        } else {
-          setActiveOrder(null);
-        }
-      };
+      if (!disposed && dm) setDmId(dm.id);
       fetchActiveOrder();
-
-      // Подписка на обновления назначений пользователя (до миграции — на заказы)
-      const oChannel = supabase.channel(`active-order-${user.id}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "order_assignments", filter: `responsible_user_id=eq.${user.id}` }, fetchActiveOrder)
-        .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `responsible_user_id=eq.${user.id}` }, fetchActiveOrder)
-        .subscribe();
-
-      return () => { supabase.removeChannel(oChannel); };
     };
     init();
+
+    return () => {
+      disposed = true;
+      supabase.removeChannel(oChannel);
+    };
   }, [user]);
 
   useEffect(() => {
@@ -193,19 +194,26 @@ function DM() {
       </div>
 
       {/* Active Task Banner */}
-      {activeOrder && (
-        <div className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 flex items-center justify-between relative z-10 shadow-sm">
-          <div className="flex flex-col">
-            <span className="text-[10px] uppercase font-bold text-primary tracking-wider">Текущая задача</span>
-            <span className="text-sm font-semibold text-foreground">
-              {activeOrder.nomenclature} <span className="text-muted-foreground">#{activeOrder.number}</span>
-            </span>
+      {activeOrder && (() => {
+        const st = activeOrder.status as "in_progress" | "stalled" | "blocked";
+        const stColor = {
+          in_progress: "text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20",
+          stalled: "text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20",
+          blocked: "text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20",
+        }[st] ?? "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20";
+        const stLabel = { in_progress: "В работе", stalled: "Завис", blocked: "Заблокирован" }[st] ?? "В работе";
+        return (
+          <div className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 flex items-center justify-between relative z-10 shadow-sm">
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase font-bold text-primary tracking-wider">Текущая задача</span>
+              <span className="text-sm font-semibold text-foreground">
+                {activeOrder.nomenclature} <span className="text-muted-foreground">#{activeOrder.number}</span>
+              </span>
+            </div>
+            <div className={`text-xs font-medium px-2 py-0.5 rounded-full border ${stColor}`}>{stLabel}</div>
           </div>
-          <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-500/20">
-            В работе
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* 3D Сфера */}
       <div className="flex flex-col items-center justify-center py-6 bg-card/40 border-b border-border/40 backdrop-blur-md">
@@ -258,9 +266,9 @@ function DM() {
               <button
                 key={i}
                 type="button"
-                disabled={sending}
+                disabled={sending || !dmId}
                 onClick={() => sendText(chip)}
-                className="shrink-0 text-xs px-3 py-1.5 rounded-full border border-border bg-card hover:bg-primary/10 text-foreground transition-colors"
+                className="shrink-0 text-xs px-3 py-1.5 rounded-full border border-border bg-card hover:bg-primary/10 text-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
               >
                 {chip}
               </button>
@@ -271,19 +279,19 @@ function DM() {
             <VoiceMicButton
               size="lg"
               onText={handleVoiceText}
-              disabled={sending}
+              disabled={sending || !dmId}
               title="Нажмите для диктовки"
             />
             <Input
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Введите сообщение..."
-              disabled={sending}
+              disabled={sending || !dmId}
               className="h-12 text-sm bg-card/60 border-border focus-visible:ring-primary rounded-xl"
             />
             <Button
               type="submit"
-              disabled={sending || !text.trim()}
+              disabled={sending || !text.trim() || !dmId}
               className="h-12 w-12 p-0 rounded-xl shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground shadow-md transition-all"
             >
               <Send className="w-5 h-5 ml-1" />

@@ -20,8 +20,8 @@ type Order = { id: string; number: string; nomenclature: string; finish_date: st
 type Chat = { id: string; name: string };
 
 function InboxPage() {
-  const { isOwner, isManager, role, loading } = useAuth();
-  const canAccess = isOwner || isManager || role === null;
+  const { isOwner, isManager, loading } = useAuth();
+  const canAccess = isOwner || isManager;
   const [orders, setOrders] = useState<Order[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<string | null>(null);
@@ -159,7 +159,7 @@ function InboxPage() {
                       <div className="text-sm font-medium">{c.name}</div>
                     </label>
                   ))}
-                  {chats.length === 0 && <div className="text-sm text-slate-500 text-center py-4">Нет чатов. <Link to="/admin/users" className="text-blue-600 underline">Создать</Link></div>}
+                  {chats.length === 0 && <div className="text-sm text-slate-500 text-center py-4">Нет чатов. {isOwner ? <Link to="/admin/users" className="text-blue-600 underline">Создать</Link> : "Обратитесь к владельцу"}</div>}
                 </div>
 
                 <Button onClick={send} disabled={dispatching || selectedChats.size === 0} className="w-full h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg shadow-sm">

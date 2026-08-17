@@ -1,10 +1,17 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { getRole } from "./orders.server";
+
+async function assertOwner(ctx: { supabase: any; userId: string }) {
+  const role = await getRole(ctx);
+  if (role !== "owner") throw new Error("Доступно только владельцу предприятия.");
+}
 
 export const getNotificationSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    await assertOwner(context);
     const { data } = await context.supabase
       .from("notification_settings").select("*").eq("user_id", context.userId).maybeSingle();
     return data ?? {
@@ -31,6 +38,7 @@ export const saveNotificationSettings = createServerFn({ method: "POST" })
     email_address: z.string().email().nullable().optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
+    await assertOwner(context);
     const { error } = await context.supabase.from("notification_settings").upsert({
       user_id: context.userId,
       ...data,

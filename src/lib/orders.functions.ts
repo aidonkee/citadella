@@ -136,8 +136,8 @@ export const claimOrder = createServerFn({ method: "POST" })
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
     const role = await getRole(context);
 
-    // Работник может брать заказ только в СВОЁМ секторе (чате, где он участник)
-    if (role === "worker") {
+    // Работник (и пользователь без роли) может брать заказ только в СВОЁМ секторе (чате, где он участник)
+    if (role !== "owner" && role !== "manager") {
       const member = await isChatMember(supabaseAdmin, data.chat_id, context.userId);
       if (!member) throw new Error("Вы не являетесь участником этого цеха и не можете взять этот заказ");
     }
@@ -175,6 +175,12 @@ export const confirmClaim = createServerFn({ method: "POST" })
 
     if (!isOwnerOrManager && !isClaimer) {
       throw new Error("Только автор отклика или Руководитель могут подтвердить отклик");
+    }
+
+    // Автор отклика подтверждает сам себя — только в своём цехе
+    if (isClaimer && !isOwnerOrManager) {
+      const member = await isChatMember(supabaseAdmin, data.chat_id, claim.user_id);
+      if (!member) throw new Error("Вы не являетесь участником этого цеха — подтвердить отклик нельзя");
     }
 
     await supabaseAdmin.from("order_claims").update({ status: "confirmed" }).eq("id", claim.id);
@@ -328,6 +334,8 @@ export const sendMessage = createServerFn({ method: "POST" })
 export const triggerAiPoll = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const role = await getRole(context);
+    if (role !== "owner" && role !== "manager") throw new Error("Forbidden: опрос доступен только руководству");
     const { triggerAiPollHelper } = await import("./orders.server");
     return await triggerAiPollHelper(context.userId);
   });

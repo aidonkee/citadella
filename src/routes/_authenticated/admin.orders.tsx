@@ -30,6 +30,7 @@ type Order = {
 
 function OrdersAdmin() {
   const { isOwner, loading } = useAuth();
+  const fileRef = React.useRef<HTMLInputElement>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [chats, setChats] = useState<{ id: string; name: string }[]>([]);
   const [assignments, setAssignments] = useState<{ order_id: string; chat_id: string; status: string; responsible_user_id: string | null }[]>([]);
@@ -95,13 +96,11 @@ function OrdersAdmin() {
           <p className="text-sm text-muted-foreground">Создайте заказ вручную или загрузите Excel</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <label className="inline-flex">
-            <input type="file" accept=".xlsx,.xls,.csv" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ""; }} />
-            <Button asChild variant="outline" disabled={importing}>
-              <span><Upload className="size-4 mr-2" />{importing ? "Импорт…" : "Импорт Excel"}</span>
-            </Button>
-          </label>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.target.value = ""; }} />
+          <Button variant="outline" disabled={importing} onClick={() => fileRef.current?.click()}>
+            <Upload className="size-4 mr-2" />{importing ? "Импорт…" : "Импорт Excel"}
+          </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button><Plus className="size-4 mr-2" />Новый заказ</Button></DialogTrigger>
             <DialogContent>
@@ -115,6 +114,7 @@ function OrdersAdmin() {
       <Card className="border-border/40">
         <CardHeader><CardTitle className="text-base">Список заказов</CardTitle></CardHeader>
         <CardContent className="px-2 sm:px-6">
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader><TableRow>
               <TableHead>Номер</TableHead><TableHead>Номенклатура</TableHead>
@@ -153,6 +153,7 @@ function OrdersAdmin() {
               {orders.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Заказов пока нет</TableCell></TableRow>}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

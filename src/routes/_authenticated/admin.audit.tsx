@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/use-auth";
 
 export const Route = createFileRoute("/_authenticated/admin/audit")({
   component: AuditPage,
@@ -31,10 +32,12 @@ const ACTION_LABEL: Record<string, string> = {
 };
 
 function AuditPage() {
+  const { isOwner, loading } = useAuth();
   const [rows, setRows] = useState<Row[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    if (!isOwner) return;
     const load = async () => {
       const { data } = await supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(300);
       const list = (data ?? []) as Row[];
@@ -50,7 +53,10 @@ function AuditPage() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "audit_log" }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, []);
+  }, [isOwner]);
+
+  if (loading) return <div className="p-6 text-muted-foreground">Загрузка…</div>;
+  if (!isOwner) return <div className="p-6 text-muted-foreground">Доступно только владельцу предприятия.</div>;
 
   return (
     <div className="soft-scrollbar h-full overflow-y-auto p-4 sm:p-6">

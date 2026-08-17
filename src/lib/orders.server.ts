@@ -23,7 +23,8 @@ export async function getRole(ctx: { supabase: any; userId: string }): Promise<A
     .select("role")
     .eq("user_id", ctx.userId)
     .maybeSingle();
-  return (data?.role ?? "owner") as AppRole;
+  // Fail-closed: без записи user_roles пользователь НЕ получает роль владельца.
+  return (data?.role ?? null) as AppRole;
 }
 
 export async function assertOwner(ctx: { supabase: any; userId: string }) {

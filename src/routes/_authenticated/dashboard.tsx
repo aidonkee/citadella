@@ -159,32 +159,52 @@ function Dashboard() {
   };
 
   useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const load = async () => {
-      const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
-      setOrders((data ?? []) as Order[]);
-      const { data: ps } = await supabase.from("profiles").select("id, display_name");
-      setProfiles(Object.fromEntries((ps ?? []).map((p) => [p.id, p.display_name])));
-      const { data: cs } = await supabase.from("chats").select("id, name, is_dm").order("name");
-      setChats(Object.fromEntries((cs ?? []).map((c) => [c.id, c.name])));
-      setDepartmentChats((cs ?? []).filter(c => !c.is_dm));
+      try {
+        const { data } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
+        if (cancelled) return;
+        setOrders((data ?? []) as Order[]);
+        const { data: ps } = await supabase.from("profiles").select("id, display_name");
+        if (cancelled) return;
+        setProfiles(Object.fromEntries((ps ?? []).map((p) => [p.id, p.display_name])));
+        const { data: cs } = await supabase.from("chats").select("id, name, is_dm").order("name");
+        if (cancelled) return;
+        setChats(Object.fromEntries((cs ?? []).map((c) => [c.id, c.name])));
+        setDepartmentChats((cs ?? []).filter(c => !c.is_dm));
 
-      const { data: oa } = await supabase.from("order_assignments").select("*");
-      if (oa) {
-        setAssignments(oa as Assignment[]);
-      } else {
-        // До миграции: синтез секторов из legacy-полей заказа
-        setAssignments(((data ?? []) as any[]).flatMap((o: any) => synthesizeLegacyAssignments(o)));
+        const { data: oa } = await supabase.from("order_assignments").select("*");
+        if (cancelled) return;
+        if (oa) {
+          setAssignments(oa as Assignment[]);
+        } else {
+          // До миграции: синтез секторов из legacy-полей заказа
+          setAssignments(((data ?? []) as any[]).flatMap((o: any) => synthesizeLegacyAssignments(o)));
+        }
+
+        // Только сотрудники (без менеджеров)
+        const { data: rls } = await supabase.from("user_roles").select("user_id").eq("role", "worker");
+        if (cancelled) return;
+        setWorkers((rls ?? []).map((r: any) => ({ id: r.user_id, display_name: (ps ?? []).find(p => p.id === r.user_id)?.display_name ?? "Сотрудник" })));
+      } catch (err: any) {
+        if (!cancelled) toast.error(`Не удалось загрузить данные: ${err.message ?? "сетевая ошибка"}`);
       }
-
-      const { data: rls } = await supabase.from("user_roles").select("user_id, role").in("role", ["worker", "manager"]);
-      setWorkers((rls ?? []).map((r: any) => ({ id: r.user_id, display_name: (ps ?? []).find(p => p.id === r.user_id)?.display_name ?? "Сотрудник" })));
     };
     load();
+    const scheduleReload = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(load, 300);
+    };
     const ch = supabase.channel("dashboard-orders")
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "order_assignments" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "order_assignments" }, scheduleReload)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(ch);
+    };
   }, []);
 
   if (loading) return <div className="p-8 text-muted-foreground animate-pulse">Загрузка нервной системы Nerva…</div>;
@@ -482,7 +502,14 @@ function Dashboard() {
             <div className="p-4 sm:p-6 bg-slate-50/30 overflow-x-auto min-h-[500px]">
               <div className="flex flex-row gap-4 h-full min-w-max">
                 {["Новый", "Производство", "Логистика", "Готово"].map(stage => {
-                  const stageOrders = filteredOrders.filter(o => parseOrderMetadata(o).stage === stage);
+                  // Заказы с нестандартным этапом (например, «Раскрой») не должны пропадать: они попадают в колонку «Производство»
+                  const stageOrders = filteredOrders.filter(o => {
+                    const s = parseOrderMetadata(o).stage;
+                    if (stage === "Производство") {
+                      return s !== "Новый" && s !== "Логистика" && s !== "Готово";
+                    }
+                    return s === stage;
+                  });
 
                   return (
                     <div key={stage} className="w-[85vw] sm:w-[320px] shrink-0 flex flex-col h-full bg-slate-100/60 rounded-xl border border-slate-200/60 overflow-hidden">
@@ -820,7 +847,6 @@ function OrderDetailsModal({ order, assignments, profiles, workers, chats, depar
               <select defaultValue={order.status} id="edit-order-status"
                 className="w-full bg-slate-50 border border-slate-200 px-2 py-2 text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-lg">
                 <option value="new">Новый</option>
-                <option value="distributed">Распределён</option>
                 <option value="in_progress">В работе</option>
                 <option value="stalled">Завис</option>
                 <option value="completed">Выполнен</option>

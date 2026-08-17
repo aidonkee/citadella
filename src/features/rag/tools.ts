@@ -257,6 +257,21 @@ async function isMemberOfChat(sb: any, userId: string, chatId: string): Promise<
   return Boolean(data);
 }
 
+// Работник (и пользователь без роли) может видеть только заказы своих секторов.
+async function canWorkerSeeOrder(sb: any, ctx: ToolContext | undefined, orderId: string): Promise<boolean> {
+  if (ctx?.userRole === "owner" || ctx?.userRole === "manager") return true;
+  if (!ctx?.userId) return false;
+  const { data: members } = await sb.from("chat_members").select("chat_id").eq("user_id", ctx.userId);
+  const myChats = new Set((members ?? []).map((m: any) => m.chat_id as string));
+  const { data: oa } = await sb.from("order_assignments").select("chat_id").eq("order_id", orderId);
+  const sectorChats = (oa ?? []).map((a: any) => a.chat_id as string);
+  if (sectorChats.length && sectorChats.some((cid) => myChats.has(cid))) return true;
+  // До миграции: сектора заказа из legacy-полей
+  const { data: orderRow } = await sb.from("orders").select("chat_id, dispatched_chat_ids").eq("id", orderId).maybeSingle();
+  const legacy = [...(Array.isArray(orderRow?.dispatched_chat_ids) ? orderRow.dispatched_chat_ids : []), orderRow?.chat_id].filter(Boolean);
+  return legacy.some((cid) => myChats.has(cid as string));
+}
+
 // Разрешение сектора для работника: его чаты (членство) + назначения заказа.
 // Если ровно одно назначение в его секторах — берём его; если несколько — просим уточнить.
 async function resolveWorkerSector(sb: any, ctx: ToolContext, orderId: string, chatNameRaw?: string): Promise<string> {
@@ -264,7 +279,8 @@ async function resolveWorkerSector(sb: any, ctx: ToolContext, orderId: string, c
     const chat = await findChatByName(sb, chatNameRaw);
     if (!chat) throw new Error(`Цех «${chatNameRaw}» не найден. Доступные цеха: см. list_chats`);
     const member = ctx.userId ? await isMemberOfChat(sb, ctx.userId, chat.id) : false;
-    if (ctx.userRole === "worker" && !member) {
+    // Владелец/менеджер могут выбрать любой цех; остальные — только свой.
+    if (ctx.userRole !== "owner" && ctx.userRole !== "manager" && !member) {
       throw new Error(`Вы не являетесь участником цеха «${chat.name}» — брать заказ можно только в своём цехе.`);
     }
     return chat.id;
@@ -313,6 +329,14 @@ export async function executeToolCall(name: string, args: any, ctx?: ToolContext
     }
 
     case "list_workers": {
+      // Список сотрудников — только руководству; работник видит себя
+      if (ctx?.userRole !== "owner" && ctx?.userRole !== "manager") {
+        if (ctx?.userId) {
+          const { data: me } = await supabase.from("profiles").select("id, display_name, username").eq("id", ctx.userId).maybeSingle();
+          return { workers: me ? [{ id: me.id, name: me.display_name ?? me.username ?? "—", role: "worker" }] : [] };
+        }
+        return { workers: [] };
+      }
       const { data } = await supabase.from("profiles").select("id, display_name, username, role");
       return { workers: (data ?? []).map((p: any) => ({ id: p.id, name: p.display_name ?? p.username ?? "—", role: p.role ?? "worker" })) };
     }
@@ -320,6 +344,18 @@ export async function executeToolCall(name: string, args: any, ctx?: ToolContext
     case "list_orders": {
       let query = supabase.from("orders").select("*").order("created_at", { ascending: false }).limit(Math.min(args.limit ?? 20, 50));
       if (args.status_filter) query = query.eq("status", String(args.status_filter).toLowerCase());
+
+      // Работник (и пользователь без роли) видит только заказы своих секторов
+      let workerScopeChatIds: Set<string> | null = null;
+      if (ctx?.userRole !== "owner" && ctx?.userRole !== "manager" && ctx?.userId) {
+        const { data: members } = await supabase.from("chat_members").select("chat_id").eq("user_id", ctx.userId);
+        workerScopeChatIds = new Set((members ?? []).map((m: any) => m.chat_id as string));
+        const { data: oaScope } = await supabase.from("order_assignments").select("order_id").in("chat_id", Array.from(workerScopeChatIds));
+        const ids = Array.from(new Set((oaScope ?? []).map((a: any) => a.order_id)));
+        if (ids.length) query = query.in("id", ids);
+        else query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+      }
+
       const { data } = await query;
 
       const { data: oa, error: oaErr } = await supabase.from("order_assignments").select("order_id, status");
@@ -350,6 +386,10 @@ export async function executeToolCall(name: string, args: any, ctx?: ToolContext
     case "get_latest_order_status": {
       const order = await findOrderByNumber(supabase, args.order_number);
       if (!order) return { error: `Заказ ${args.order_number} не найден` };
+
+      // Работник — только заказы своих секторов
+      const canSee = await canWorkerSeeOrder(supabase, ctx, order.id);
+      if (!canSee) return { error: "Заказ не из вашего цеха — доступ только к заказам вашего сектора." };
 
       const { data: oa, error: oaErr } = await supabase.from("order_assignments")
         .select("chat_id, responsible_user_id, status, started_at, completed_at")
@@ -393,6 +433,9 @@ export async function executeToolCall(name: string, args: any, ctx?: ToolContext
       const order = await findOrderByNumber(supabase, args.order_number);
       if (!order) return { error: `Заказ ${args.order_number} не найден` };
 
+      const canSee = await canWorkerSeeOrder(supabase, ctx, order.id);
+      if (!canSee) return { error: "Заказ не из вашего цеха — доступ только к заказам вашего сектора." };
+
       const { data: oa, error: oaErr2 } = await supabase.from("order_assignments")
         .select("*")
         .eq("order_id", order.id)
@@ -428,13 +471,26 @@ export async function executeToolCall(name: string, args: any, ctx?: ToolContext
     }
 
     case "get_production_summary": {
+      // Работник видит нагрузку только своих секторов
+      let visibleChatIds: Set<string> | null = null;
+      let visibleOrderIds: Set<string> | null = null;
+      if (ctx?.userRole !== "owner" && ctx?.userRole !== "manager" && ctx?.userId) {
+        const { data: members } = await supabase.from("chat_members").select("chat_id").eq("user_id", ctx.userId);
+        visibleChatIds = new Set((members ?? []).map((m: any) => m.chat_id as string));
+      }
+
       const { data: orders } = await supabase.from("orders").select("id, status, finish_date");
       const { data: oa } = await supabase.from("order_assignments").select("order_id, chat_id, status, responsible_user_id");
       const { data: chats } = await supabase.from("chats").select("id, name").eq("is_dm", false);
 
+      if (visibleChatIds) {
+        visibleOrderIds = new Set((oa ?? []).filter((a: any) => visibleChatIds!.has(a.chat_id)).map((a: any) => a.order_id));
+      }
+
       const byStatus = new Map<string, number>();
       let overdue = 0;
       for (const o of orders ?? []) {
+        if (visibleOrderIds && !visibleOrderIds.has(o.id)) continue;
         byStatus.set(o.status, (byStatus.get(o.status) ?? 0) + 1);
         if ((o.status === "in_progress" || o.status === "distributed" || o.status === "stalled") && o.finish_date) {
           if (new Date(o.finish_date) < new Date()) overdue += 1;
@@ -443,6 +499,7 @@ export async function executeToolCall(name: string, args: any, ctx?: ToolContext
 
       const sectorLoad = new Map<string, { active: number; done: number }>();
       for (const a of oa ?? []) {
+        if (visibleChatIds && !visibleChatIds.has(a.chat_id)) continue;
         const entry = sectorLoad.get(a.chat_id) ?? { active: 0, done: 0 };
         if (a.status === "completed") entry.done += 1;
         else if (a.status !== "cancelled" && a.status !== "new") entry.active += 1;
@@ -600,6 +657,10 @@ export async function executeToolCall(name: string, args: any, ctx?: ToolContext
       if (!valid.includes(status)) {
         return { error: `Недопустимый статус «${args.status}». Допустимо: completed, in_progress, stalled, blocked, new.` };
       }
+      // Отменять сектор может только руководство
+      if (status === "cancelled" && !canManage(ctx)) {
+        return { error: "Отменять сектор может только владелец или менеджер." };
+      }
 
       let chatId: string;
       try {
@@ -656,6 +717,10 @@ export async function executeToolCall(name: string, args: any, ctx?: ToolContext
     }
 
     case "update_task_stage": {
+      if (!canManage(ctx)) {
+        return { error: "Операция недоступна. Менять этап и приоритет заказа могут только менеджеры и владелец." };
+      }
+
       const order = await findOrderByNumber(supabase, args.order_number);
       if (!order) return { error: `Заказ №${args.order_number} не найден` };
 

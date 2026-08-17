@@ -148,6 +148,7 @@ export async function claimAssignment(sb: Sb, args: {
   const { data: order } = await sb.from("orders").select("*").eq("id", orderId).maybeSingle();
   if (!order) throw new Error("Заказ не найден");
   if (order.status === "cancelled") throw new Error("Заказ отменён");
+  if (order.status === "completed") throw new Error("Заказ полностью выполнен — брать его в работу нельзя");
 
   // LEGACY (до миграции): один ответственный на весь заказ
   if (!(await assignmentsTableExists(sb))) {
@@ -188,6 +189,17 @@ export async function claimAssignment(sb: Sb, args: {
     .eq("order_id", orderId)
     .eq("chat_id", chatId)
     .maybeSingle();
+
+  // Заказ можно взять только в том секторе, куда он РАСПРЕДЕЛЁН.
+  // Без проверки работник мог бы создавать назначения в любом чате (эскалация).
+  if (!existing) {
+    const inLegacySectors =
+      order.chat_id === chatId ||
+      (Array.isArray(order.dispatched_chat_ids) && order.dispatched_chat_ids.includes(chatId));
+    if (!inLegacySectors) {
+      throw new Error("Заказ не распределён в этот цех — взять его здесь нельзя");
+    }
+  }
 
   if (existing?.responsible_user_id) {
     if (existing.responsible_user_id === userId) return { ok: true, alreadyMine: true, order };

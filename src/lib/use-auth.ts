@@ -28,12 +28,30 @@ export function useAuth() {
 
   useEffect(() => {
     if (!user) { setRole(null); return; }
-    supabase
-      .from("user_roles").select("role").eq("user_id", user.id).maybeSingle()
-      .then(({ data }) => {
-        setRole((data?.role ?? null) as any);
-        setLoading(false);
-      });
+    let cancelled = false;
+    let attempts = 0;
+    const fetchRole = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("user_roles").select("role").eq("user_id", user.id).maybeSingle();
+        if (cancelled) return;
+        if (error || !data) {
+          // Сетевой сбой/RLS-глюк — не «разжаловываем» пользователя: пробуем ещё раз
+          if (attempts < 2) { attempts++; setTimeout(fetchRole, 700); return; }
+          setRole(null);
+        } else {
+          setRole((data.role ?? null) as any);
+        }
+      } catch {
+        if (cancelled) return;
+        if (attempts < 2) { attempts++; setTimeout(fetchRole, 700); return; }
+        setRole(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    fetchRole();
+    return () => { cancelled = true; };
   }, [user]);
 
   return {

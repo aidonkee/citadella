@@ -98,7 +98,7 @@ export function TablesEditor() {
       }
       toast.success("[NERVA // SYS]: Структура и строки таблицы успешно сохранены в БД!");
     } catch (err: any) {
-      toast.success("[NERVA // LOCAL]: Данные сохранены локально (таблицы в Supabase еще не созданы)");
+      toast.error(`[NERVA // LOCAL]: БД недоступна — данные сохранены только локально (${err.message ?? "ошибка"})`);
     } finally {
       setSaving(false);
     }

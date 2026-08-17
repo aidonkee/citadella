@@ -24,11 +24,12 @@ type S = {
 };
 
 function SettingsPage() {
-  const { user } = useAuth();
+  const { user, isOwner, loading } = useAuth();
   const [s, setS] = useState<S | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (!isOwner) return;
     getNotificationSettings().then((d: any) => setS({
       realtime_status_changes: !!d.realtime_status_changes,
       realtime_worker_replies: !!d.realtime_worker_replies,
@@ -38,8 +39,10 @@ function SettingsPage() {
       email_new_claims: !!d.email_new_claims,
       email_address: d.email_address ?? user?.email ?? null,
     }));
-  }, [user]);
+  }, [user, isOwner]);
 
+  if (loading) return <div className="p-6 text-muted-foreground">Загрузка…</div>;
+  if (!isOwner) return <div className="p-6 text-muted-foreground">Доступно только владельцу предприятия.</div>;
   if (!s) return <div className="p-6 text-muted-foreground">Загрузка…</div>;
 
   const set = <K extends keyof S>(k: K, v: S[K]) => setS({ ...s, [k]: v });
