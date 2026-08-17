@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { createLovableAiGatewayProvider } from "./ai-gateway.server";
 import { parseOrderMetadata, buildOrderMetadata, OrderStage, OrderPriority } from "./order-metadata";
 
-const ORDER_AI_MODEL = "google/gemini-3-flash-preview";
+const ORDER_AI_MODEL = "google/gemini-3.6-flash";
 
 export type AppRole = "owner" | "manager" | "worker" | null;
 
@@ -79,6 +79,7 @@ export async function processAiAssistantQuery(userId: string, content: string, c
   const userRole = (await getRole({ supabase: supabaseAdmin, userId })) || "worker";
 
   let reply = "";
+  let updatedOrder: string | undefined;
 
   // 0. Pre-filter check for non-production questions
   if (isOffTopicQuery(content)) {
@@ -88,7 +89,9 @@ export async function processAiAssistantQuery(userId: string, content: string, c
     try {
       const { RAGAgent } = await import("@/features/rag/agent");
       const agent = new RAGAgent({ userId, userRole });
-      reply = await agent.run(`Пользователь ${userName} (роль: ${userRole}): ${content}`);
+      const result = await agent.run(`Пользователь ${userName} (роль: ${userRole}): ${content}`);
+      reply = result.reply;
+      updatedOrder = result.affectedOrders[0];
     } catch (err) {
       console.warn("RAGAgent execution failed, falling back to legacy parser:", err);
     }
@@ -133,19 +136,58 @@ export async function processAiAssistantQuery(userId: string, content: string, c
     });
   }
 
-  return { reply };
+  return { reply, updatedOrder };
 }
 
 export async function triggerAiPollHelper(actorUserId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { logAudit, notifyOwners } = await import("@/lib/audit.server");
+  const { assignmentsTableExists } = await import("@/lib/assignments.server");
 
-  // Get all active order assignments currently in progress or stalled
+  // До миграции: legacy-опрос — заказы с ответственным или ждущие распределения
+  if (!(await assignmentsTableExists(supabaseAdmin))) {
+    const { data: legacyOrders } = await supabaseAdmin
+      .from("orders")
+      .select("*")
+      .in("status", ["in_progress", "stalled", "new"])
+      .order("updated_at", { ascending: true });
+
+    let legacyCount = 0;
+    for (const order of legacyOrders ?? []) {
+      if (order.status === "new" && !order.is_dispatched) continue;
+      const isPending = !order.responsible_user_id;
+      const userName = isPending ? null : ((await supabaseAdmin.from("profiles").select("display_name").eq("id", order.responsible_user_id).maybeSingle()).data?.display_name ?? "Сотрудник");
+      const pollMessage = isPending
+        ? `[NERVA // POLL]: Заказ №${order.number} ожидает принятия в работу.\n\nПозиция: ${order.nomenclature} (срок: ${order.finish_date ?? "—"})\n\n*Никто ещё не взял этот заказ. Кто берёт — нажмите «Взять в работу» на карточке заказа.*`
+        : `[NERVA // POLL]: Запрос статуса по заказу №${order.number}\n\nОтветственный: ${userName}\nПозиция: ${order.nomenclature} (срок: ${order.finish_date ?? "—"})\n\n*${userName}, всё в порядке? Надиктуйте короткий ответ — я обновлю дашборд.*`;
+
+      const targets = new Set<string>();
+      if (Array.isArray(order.dispatched_chat_ids)) order.dispatched_chat_ids.forEach((cid: string) => targets.add(cid));
+      if (order.chat_id) targets.add(order.chat_id);
+      if (!isPending) {
+        const { data: dm } = await supabaseAdmin.from("chats").select("id").eq("is_dm", true).eq("dm_user_id", order.responsible_user_id).maybeSingle();
+        if (dm) targets.add(dm.id);
+      }
+      for (const cid of targets) {
+        await supabaseAdmin.from("messages").insert({
+          chat_id: cid, is_ai: true, kind: "followup", order_id: order.id, content: pollMessage,
+        });
+      }
+      legacyCount++;
+    }
+
+    await logAudit({ actor_user_id: actorUserId, action: "ai.poll_triggered", entity_type: "system", entity_id: null, details: { count: legacyCount, mode: "legacy" } });
+    return { ok: true, count: legacyCount, message: `Опрошено заказов: ${legacyCount}` };
+  }
+
+  // Get all assignments needing attention:
+  //  - in_progress / stalled / blocked -> опрашиваем ответственного
+  //  - new (PENDING)                   -> напоминаем сектору, что заказ ждёт принятия
   const { data: activeAssigns } = await supabaseAdmin
     .from("order_assignments")
     .select("*, order:orders(*)")
-    .in("status", ["in_progress", "stalled"])
-    .order("last_update_at", { ascending: true });
+    .in("status", ["in_progress", "stalled", "blocked", "new"])
+    .order("updated_at", { ascending: true });
 
   if (!activeAssigns || activeAssigns.length === 0) {
     return { ok: true, count: 0, message: "Нет активных заказов для опроса" };
@@ -153,30 +195,51 @@ export async function triggerAiPollHelper(actorUserId: string) {
 
   // Fetch all profiles of responsible users
   const userIds = [...new Set(activeAssigns.map(a => a.responsible_user_id).filter(Boolean))] as string[];
-  const { data: profiles } = await supabaseAdmin
-    .from("profiles")
-    .select("id, display_name")
-    .in("id", userIds);
+  const { data: profiles } = userIds.length
+    ? await supabaseAdmin.from("profiles").select("id, display_name").in("id", userIds)
+    : { data: [] };
   const profileMap = new Map((profiles ?? []).map(p => [p.id, p.display_name]));
 
   // Fetch all DMs of responsible users
-  const { data: dms } = await supabaseAdmin
-    .from("chats")
-    .select("id, dm_user_id")
-    .eq("is_dm", true)
-    .in("dm_user_id", userIds);
+  const { data: dms } = userIds.length
+    ? await supabaseAdmin.from("chats").select("id, dm_user_id").eq("is_dm", true).in("dm_user_id", userIds)
+    : { data: [] };
   const dmMap = new Map((dms ?? []).map(d => [d.dm_user_id, d.id]));
+
+  // Fetch sector chat names
+  const chatIds = [...new Set(activeAssigns.map(a => a.chat_id).filter(Boolean))] as string[];
+  const { data: chatRows } = chatIds.length
+    ? await supabaseAdmin.from("chats").select("id, name").in("id", chatIds)
+    : { data: [] };
+  const chatMap = new Map((chatRows ?? []).map(c => [c.id, c.name]));
 
   let pollCount = 0;
   for (const assign of activeAssigns) {
     if (!assign.order) continue;
-    const userName = assign.responsible_user_id ? (profileMap.get(assign.responsible_user_id) ?? "Сотрудник") : "Команда";
-    const pollMessage = `[NERVA // POLL]: Запрос статуса по заказу №${assign.order.number}\n\n` +
-      `Ответственный: ${userName}\n` +
-      `Позиция: ${assign.order.nomenclature} (срок: ${assign.order.finish_date ?? "—"})\n\n` +
-      `*Нажмите кнопку микрофона и надиктуйте короткий ответ или напишите сообщением — я сразу обновлю дашборд.*`;
+    const sectorName = chatMap.get(assign.chat_id) ?? "Сектор";
+    const isPending = assign.status === "new" && !assign.responsible_user_id;
+    const userName = assign.responsible_user_id ? (profileMap.get(assign.responsible_user_id) ?? "Сотрудник") : null;
 
-    // Send to assignment chat and DM
+    let pollMessage: string;
+    if (isPending) {
+      // Сектор ещё не принял заказ — пингуем сам сектор
+      pollMessage = `[NERVA // POLL]: Заказ №${assign.order.number} ожидает принятия в работу.\n\n` +
+        `Сектор: ${sectorName}\n` +
+        `Позиция: ${assign.order.nomenclature} (срок: ${assign.order.finish_date ?? "—"})\n\n` +
+        `*Никто ещё не взял этот заказ. Кто берёт — нажмите «Взять в работу» на карточке заказа.*`;
+    } else {
+      // Заказ в работе — опрашиваем ответственного
+      const since = assign.started_at ?? assign.updated_at ?? assign.created_at;
+      const hours = since ? Math.floor((Date.now() - new Date(since).getTime()) / 3600000) : 0;
+      const duration = hours >= 1 ? ` (у вас уже ~${hours} ч)` : "";
+      pollMessage = `[NERVA // POLL]: Запрос статуса по заказу №${assign.order.number}\n\n` +
+        `Сектор: ${sectorName}\n` +
+        `Ответственный: ${userName}${duration}\n` +
+        `Позиция: ${assign.order.nomenclature} (срок: ${assign.order.finish_date ?? "—"})\n\n` +
+        `*${userName}, всё в порядке? Нажмите кнопку микрофона и надиктуйте короткий ответ или напишите сообщением — я сразу обновлю дашборд.*`;
+    }
+
+    // Send to assignment chat and DM (для pending — только в чат сектора)
     const userDmId = assign.responsible_user_id ? dmMap.get(assign.responsible_user_id) : null;
     const allDest = new Set([assign.chat_id, ...(userDmId ? [userDmId] : [])]);
 
@@ -193,9 +256,9 @@ export async function triggerAiPollHelper(actorUserId: string) {
   }
 
   await logAudit({ actor_user_id: actorUserId, action: "ai.poll_triggered", entity_type: "system", entity_id: null, details: { count: pollCount } });
-  await notifyOwners({ title: "[NERVA]: Запущен опрос сотрудников", body: `Разослано запросов по ${pollCount} заказам в работе.`, kind: "status_change" });
+  await notifyOwners({ title: "[NERVA]: Запущен опрос сотрудников", body: `Разослано запросов по ${pollCount} назначениям (включая ожидающие принятия).`, kind: "status_change" });
 
-  return { ok: true, count: pollCount, message: `Опрошено сотрудников по ${pollCount} заказам` };
+  return { ok: true, count: pollCount, message: `Опрошено назначений: ${pollCount}` };
 }
 
 function defaultCard(order: OrderCardInput) {

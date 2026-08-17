@@ -58,10 +58,20 @@ function ChatPage() {
       const { data: os } = await supabase.from("orders").select("id, status, number, responsible_user_id, comment, chat_id, dispatched_chat_ids").in("id", orderIds);
 
       // Load assignments for THIS chat specifically
-      const { data: assignments } = await supabase.from("order_assignments").select("order_id, status, responsible_user_id").in("order_id", orderIds).eq("chat_id", chatId);
+      const { data: assignments, error: assignErr } = await supabase.from("order_assignments").select("order_id, status, responsible_user_id").in("order_id", orderIds).eq("chat_id", chatId);
       const assignMap = new Map((assignments ?? []).map(a => [a.order_id, a]));
 
       setOrders(Object.fromEntries((os ?? []).map((o) => {
+        if (assignErr) {
+          // До миграции: legacy-схема — сектор = заказ, ответственный = ответственный заказа
+          const inThisChat = o.chat_id === chatId || (Array.isArray(o.dispatched_chat_ids) && o.dispatched_chat_ids.includes(chatId));
+          if (!inThisChat) return [o.id, { ...o, responsible_user_id: null }];
+          return [o.id, {
+            ...o,
+            status: o.status === "completed" ? "completed" : o.responsible_user_id ? "in_progress" : "new",
+            responsible_user_id: o.responsible_user_id,
+          }];
+        }
         const assign = assignMap.get(o.id);
         return [o.id, {
           ...o,
@@ -157,6 +167,16 @@ function ChatPage() {
     }
   };
 
+  const onMarkProblem = async (orderId: string) => {
+    try {
+      await updateOrderStatus({ data: { order_id: orderId, chat_id: chatId, status: "stalled" } as any });
+      toast.success("Отмечена проблема — руководство уведомлено");
+      await load();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   return (
     <div className="flex h-[calc(100vh-4rem)] min-w-0 overflow-hidden">
       <div className="hidden md:block"><ChatsSidebar activeId={chatId} /></div>
@@ -210,34 +230,64 @@ function ChatPage() {
                     <ReactMarkdown>{stripRawJsonMetadata(m.content)}</ReactMarkdown>
                   </div>
                   {m.kind === "order_card" && order && (() => {
-                    // Per-chat assignment status (not global order status)
+                    // Статус ИМЕННО этого сектора (assignment), а не всего заказа
                     const isAssignedInThisChat = Boolean(order.responsible_user_id);
                     const workerName = order.responsible_user_id ? (profiles[order.responsible_user_id] ?? "Сотрудник") : "";
                     const isCompleted = order.status === "completed";
+                    const isProblem = order.status === "stalled" || order.status === "blocked";
+                    const canComplete = order.responsible_user_id === user?.id || isOwner || isManager;
+                    const meta = parseOrderMetadata(order.comment);
 
                     return (
                       <div className="mt-3 flex flex-col gap-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {/* Show per-chat assignment status */}
-                          {isCompleted ? (
-                            <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 font-bold">
-                              ✅ Завершено
+                        {meta.priority && meta.priority !== "Обычный" && (
+                          <div>
+                            <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 font-bold">
+                              🔥 Приоритет: {meta.priority}
                             </Badge>
-                          ) : isAssignedInThisChat ? (
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isCompleted ? (
                             <>
-                              <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50 font-bold">
-                                🔵 В работе: {workerName}
+                              <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 font-bold">
+                                ✅ Завершено{workerName ? `: ${workerName}` : ""}
                               </Badge>
-                              {order.responsible_user_id === user?.id && (
-                                <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-300 hover:bg-emerald-50" onClick={() => onToggleSector(m.order_id!, true)}>
-                                  <CheckCircle2 className="size-4 mr-1" />Завершить
+                              {canComplete && (
+                                <Button size="sm" variant="outline" className="text-slate-600 border-slate-300 hover:bg-slate-50" onClick={() => onToggleSector(m.order_id!, false)}>
+                                  Вернуть в работу
                                 </Button>
                               )}
                             </>
+                          ) : isAssignedInThisChat ? (
+                            <>
+                              <Badge variant="outline" className={isProblem
+                                ? "text-red-700 border-red-300 bg-red-50 font-bold"
+                                : "text-blue-700 border-blue-300 bg-blue-50 font-bold"}>
+                                {isProblem ? `⚠️ ${order.status === "blocked" ? "Заблокирован" : "Проблема"}` : "🔵 В работе"}: {workerName}
+                              </Badge>
+                              {canComplete && (
+                                <>
+                                  <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-300 hover:bg-emerald-50" onClick={() => onToggleSector(m.order_id!, true)}>
+                                    <CheckCircle2 className="size-4 mr-1" />Завершить
+                                  </Button>
+                                  {!isProblem && (
+                                    <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => onMarkProblem(m.order_id!)}>
+                                      ⚠️ Проблема
+                                    </Button>
+                                  )}
+                                </>
+                              )}
+                            </>
                           ) : (
-                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold" onClick={() => onClaim(m.order_id!)}>
-                              <Check className="size-4 mr-1" />Взять в работу
-                            </Button>
+                            <>
+                              <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 font-bold">
+                                🟡 Ожидает принятия
+                              </Badge>
+                              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold" onClick={() => onClaim(m.order_id!)}>
+                                <Check className="size-4 mr-1" />Взять в работу
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>

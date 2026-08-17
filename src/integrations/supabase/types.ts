@@ -214,28 +214,37 @@ export type Database = {
       order_assignments: {
         Row: {
           chat_id: string
+          completed_at: string | null
           created_at: string
           id: string
           order_id: string
+          order_index: number | null
           responsible_user_id: string | null
+          started_at: string | null
           status: Database["public"]["Enums"]["order_status"]
           updated_at: string
         }
         Insert: {
           chat_id: string
+          completed_at?: string | null
           created_at?: string
           id?: string
           order_id: string
+          order_index?: number | null
           responsible_user_id?: string | null
+          started_at?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           updated_at?: string
         }
         Update: {
           chat_id?: string
+          completed_at?: string | null
           created_at?: string
           id?: string
           order_id?: string
+          order_index?: number | null
           responsible_user_id?: string | null
+          started_at?: string | null
           status?: Database["public"]["Enums"]["order_status"]
           updated_at?: string
         }
@@ -447,7 +456,7 @@ export type Database = {
     }
     Enums: {
       app_role: "owner" | "worker" | "manager"
-      order_status: "new" | "in_progress" | "stalled" | "completed" | "overdue"
+      order_status: "new" | "distributed" | "in_progress" | "stalled" | "blocked" | "completed" | "overdue" | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never

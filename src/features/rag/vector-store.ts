@@ -4,7 +4,7 @@ import ws from "ws";
 
 // Create a Supabase client directly using process.env (Node.js compatible, no import.meta.env)
 function getSupabaseClient() {
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://jvvcholnwdinjbexbjvl.supabase.co";
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://nngbqrfatvpxwxoljihv.supabase.co";
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
   return createClient(url, key, { realtime: { transport: ws as any } });
 }

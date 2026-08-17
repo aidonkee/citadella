@@ -3,6 +3,18 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { aiGenerateOrderCard, assertOwner, getRole, getTargetChats, processDmReply, processAiAssistantQuery, triggerAiPollHelper } from "./orders.server";
 import { buildOrderMetadata } from "./order-metadata";
+import {
+  claimAssignment,
+  dispatchOrderToChats,
+  reassignAssignmentResponsible,
+  setAssignmentStatus,
+  syncOrderStatusWithAssignments,
+  getChatName,
+  getProfileName,
+} from "./assignments.server";
+
+// Реэкспорт для обратной совместимости существующих импортов.
+export { syncOrderStatusWithAssignments };
 
 const OrderInput = z.object({
   number: z.string().min(1),
@@ -14,6 +26,18 @@ const OrderInput = z.object({
   chat_id: z.string().uuid().nullable().optional(),
   follow_up_interval_minutes: z.number().int().min(5).default(120),
 });
+
+const AssignmentStatusEnum = z.enum(["new", "in_progress", "stalled", "blocked", "completed", "cancelled", "overdue"]);
+
+async function isChatMember(supabaseAdmin: any, chatId: string, userId: string) {
+  const { data } = await supabaseAdmin
+    .from("chat_members")
+    .select("user_id")
+    .eq("chat_id", chatId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return Boolean(data);
+}
 
 export const createOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -41,16 +65,11 @@ export const createOrder = createServerFn({ method: "POST" })
     }).select().single();
     if (error) throw new Error(error.message);
 
-    let msg: any = null;
+    // Заказ, сразу назначенный в один чат (legacy-режим создания owner'ом)
     if (chat_id) {
       const content = await aiGenerateOrderCard(data);
-      const { data: insertedMsg, error: msgError } = await supabaseAdmin.from("messages").insert({
-        chat_id, is_ai: true, content, order_id: order.id, kind: "order_card",
-      }).select().single();
-      if (msgError) throw new Error(msgError.message);
-      msg = insertedMsg;
-      await supabaseAdmin.from("orders").update({ ai_message_id: msg?.id }).eq("id", order.id);
-      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: msg?.id ?? null, details: { chat_id, kind: "order_card", order_id: order.id } });
+      await dispatchOrderToChats(supabaseAdmin, { order, chatIds: [chat_id], cardContent: content });
+      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: order.ai_message_id ?? null, details: { chat_id, kind: "order_card", order_id: order.id } });
     }
     await logAudit({ actor_user_id: context.userId, action: isManager ? "order.submitted" : "order.created", entity_type: "order", entity_id: order.id, details: { number: order.number, chat_id, by_manager: isManager } });
     if (needsDispatch) {
@@ -66,7 +85,8 @@ export const dispatchOrder = createServerFn({ method: "POST" })
     chat_ids: z.array(z.string().uuid()).min(1),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertOwner(context);
+    const role = await getRole(context);
+    if (role !== "owner" && role !== "manager") throw new Error("Forbidden: только владелец или менеджер могут распределять заказы");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit } = await import("@/lib/audit.server");
     const { data: order, error: oe } = await supabaseAdmin.from("orders").select("*").eq("id", data.order_id).single();
@@ -77,33 +97,15 @@ export const dispatchOrder = createServerFn({ method: "POST" })
       chat_id: null, follow_up_interval_minutes: order.follow_up_interval_minutes,
     };
     const content = await aiGenerateOrderCard(orderInput);
-    let firstMsgId: string | null = null;
-    for (const cid of data.chat_ids) {
-      const { data: m, error: msgError } = await supabaseAdmin.from("messages").insert({
-        chat_id: cid, is_ai: true, content, order_id: order.id, kind: "order_card",
-      }).select().single();
-      if (msgError) throw new Error(msgError.message);
-      if (!firstMsgId) firstMsgId = m?.id ?? null;
-      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: m?.id ?? null, details: { chat_id: cid, kind: "order_card", order_id: order.id } });
+
+    // Сливаемся с существующими секторами: новые добавляются, старые сохраняются
+    const result = await dispatchOrderToChats(supabaseAdmin, { order, chatIds: data.chat_ids, cardContent: content });
+    for (const cid of result.added) {
+      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: null, details: { chat_id: cid, kind: "order_card", order_id: order.id } });
     }
-    const { error: updateError } = await supabaseAdmin.from("orders").update({
-      is_dispatched: true,
-      dispatched_at: new Date().toISOString(),
-      dispatched_chat_ids: data.chat_ids,
-      ai_message_id: firstMsgId,
-    }).eq("id", order.id);
-    if (updateError) throw new Error(updateError.message);
 
-    // Create assignments for each chat
-    const assignments = data.chat_ids.map(cid => ({
-      order_id: order.id,
-      chat_id: cid,
-      status: "new" as const
-    }));
-    await supabaseAdmin.from("order_assignments").upsert(assignments, { onConflict: "order_id,chat_id" });
-
-    await logAudit({ actor_user_id: context.userId, action: "order.dispatched", entity_type: "order", entity_id: order.id, details: { chat_ids: data.chat_ids, number: order.number } });
-    return { ok: true, count: data.chat_ids.length };
+    await logAudit({ actor_user_id: context.userId, action: "order.dispatched", entity_type: "order", entity_id: order.id, details: { chat_ids: data.chat_ids, added: result.added, number: order.number } });
+    return { ok: true, count: data.chat_ids.length, added: result.added.length, total: result.total };
   });
 
 
@@ -124,80 +126,31 @@ export const bulkCreateOrders = createServerFn({ method: "POST" })
     return { count };
   });
 
+// "Взять в работу" — принятие СВОЕГО assignment'а сектором.
+// Никакого глобального lock на заказ: другие сектора по-прежнему могут взять заказ.
 export const claimOrder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) => z.object({ order_id: z.string().uuid(), chat_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
-    
-    // Check if order in this chat is already assigned
-    const { data: existingAssignment } = await supabaseAdmin
-      .from("order_assignments")
-      .select("responsible_user_id, status")
-      .eq("order_id", data.order_id)
-      .eq("chat_id", data.chat_id)
-      .maybeSingle();
+    const role = await getRole(context);
 
-    if (existingAssignment?.responsible_user_id) {
-      if (existingAssignment.responsible_user_id === context.userId) {
-        return { ok: true };
-      }
-      throw new Error("Заказ в этом цехе уже взят в работу другим сотрудником");
+    // Работник может брать заказ только в СВОЁМ секторе (чате, где он участник)
+    if (role === "worker") {
+      const member = await isChatMember(supabaseAdmin, data.chat_id, context.userId);
+      if (!member) throw new Error("Вы не являетесь участником этого цеха и не можете взять этот заказ");
     }
 
-    // Record claim as confirmed (safely)
-    try {
-      await supabaseAdmin.from("order_claims").upsert({
-        order_id: data.order_id,
-        chat_id: data.chat_id,
-        user_id: context.userId,
-        status: "confirmed",
-      }, { onConflict: "order_id,chat_id" });
-    } catch (e) {
-      console.warn("order_claims upsert warning:", e);
-    }
+    const result = await claimAssignment(supabaseAdmin, {
+      orderId: data.order_id,
+      chatId: data.chat_id,
+      userId: context.userId,
+    });
+    if (result.alreadyMine) return { ok: true };
+    const order = result.order;
 
-    const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", data.order_id).single();
-    if (!order) throw new Error("Заказ не найден");
-    const next = new Date(Date.now() + order.follow_up_interval_minutes * 60 * 1000).toISOString();
-
-    // Immediately assign responsible user and set status to in_progress
-    await supabaseAdmin.from("order_assignments").upsert({
-      order_id: data.order_id,
-      chat_id: data.chat_id,
-      responsible_user_id: context.userId,
-      status: "in_progress",
-    }, { onConflict: "order_id,chat_id" });
-
-    await supabaseAdmin.from("orders").update({
-      last_update_at: new Date().toISOString(),
-      next_follow_up_at: next,
-    }).eq("id", data.order_id);
-
-    await syncOrderStatusWithAssignments(supabaseAdmin, data.order_id);
-
-    const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", context.userId).single();
-    const workerName = profile?.display_name ?? "Сотрудник";
-
-    const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
-      chat_id: data.chat_id, is_ai: true, kind: "system", order_id: order.id,
-      content: `✅ Заказ **${order.number}** взял в работу **${workerName}**`,
-    }).select().single();
-    if (msgError) throw new Error(msgError.message);
-    await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: data.chat_id, kind: "system", order_id: order.id } });
-
-    const { data: dm } = await supabaseAdmin.from("chats").select("id").eq("is_dm", true).eq("dm_user_id", context.userId).maybeSingle();
-    if (dm) {
-      const { data: followupMsg } = await supabaseAdmin.from("messages").insert({
-        chat_id: dm.id, is_ai: true, kind: "followup", order_id: order.id,
-        content: `Привет! Ты взял в работу заказ **${order.number}** (${order.nomenclature}). Напиши коротко — на какой стадии? Я буду уточнять каждые ${order.follow_up_interval_minutes} мин.`,
-      }).select().single();
-      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: followupMsg?.id ?? null, details: { chat_id: dm.id, kind: "followup", order_id: order.id } });
-    }
-
-    await logAudit({ actor_user_id: context.userId, action: "claim.confirmed", entity_type: "order", entity_id: order.id, details: { number: order.number, chat_id: data.chat_id } });
-    await notifyOwners({ title: "Заказ взят в работу", body: `${workerName} взял в работу заказ ${order.number}`, link: `/chats/${data.chat_id}` , kind: "status_change" });
+    await logAudit({ actor_user_id: context.userId, action: "claim.confirmed", entity_type: "order", entity_id: order.id, details: { number: order.number, chat_id: data.chat_id, chat_name: result.chatName } });
     return { ok: true };
   });
 
@@ -208,12 +161,12 @@ export const confirmClaim = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
     const { getRole } = await import("./orders.server");
-    
+
     const { data: claim } = await supabaseAdmin
       .from("order_claims").select("*")
       .eq("order_id", data.order_id).eq("chat_id", data.chat_id)
       .eq("status", "pending").maybeSingle();
-      
+
     if (!claim) throw new Error("Нет ожидающего отклика");
 
     const role = await getRole(context);
@@ -225,41 +178,16 @@ export const confirmClaim = createServerFn({ method: "POST" })
     }
 
     await supabaseAdmin.from("order_claims").update({ status: "confirmed" }).eq("id", claim.id);
-    const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", data.order_id).single();
-    if (!order) throw new Error("Заказ не найден");
-    const next = new Date(Date.now() + order.follow_up_interval_minutes * 60 * 1000).toISOString();
-    
-    await supabaseAdmin.from("order_assignments").update({
-      responsible_user_id: claim.user_id,
-      status: "in_progress",
-    }).eq("order_id", data.order_id).eq("chat_id", data.chat_id);
 
-    await supabaseAdmin.from("orders").update({
-      last_update_at: new Date().toISOString(),
-      next_follow_up_at: next,
-    }).eq("id", data.order_id);
+    const result = await claimAssignment(supabaseAdmin, {
+      orderId: data.order_id,
+      chatId: data.chat_id,
+      userId: claim.user_id,
+      confirmedByManager: isOwnerOrManager && !isClaimer,
+    });
+    const order = result.order;
 
-    const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", claim.user_id).single();
-    const workerName = profile?.display_name ?? "Сотрудник";
-    const confirmedByText = isOwnerOrManager && !isClaimer ? " (утверждено руководителем)" : "";
-
-    const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
-      chat_id: data.chat_id, is_ai: true, kind: "system", order_id: order.id,
-      content: `✅ Заказ **${order.number}** взял в работу **${workerName}**${confirmedByText}`,
-    }).select().single();
-    if (msgError) throw new Error(msgError.message);
-    await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: data.chat_id, kind: "system", order_id: order.id } });
-
-    const { data: dm } = await supabaseAdmin.from("chats").select("id").eq("is_dm", true).eq("dm_user_id", claim.user_id).maybeSingle();
-    if (dm) {
-      const { data: followupMsg } = await supabaseAdmin.from("messages").insert({
-        chat_id: dm.id, is_ai: true, kind: "followup", order_id: order.id,
-        content: `Привет! Заказ **${order.number}** (${order.nomenclature}) подтверждён и передан тебе в работу. Напиши коротко — на какой стадии? Я буду уточнять каждые ${order.follow_up_interval_minutes} мин.`,
-      }).select().single();
-      await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: followupMsg?.id ?? null, details: { chat_id: dm.id, kind: "followup", order_id: order.id } });
-    }
     await logAudit({ actor_user_id: context.userId, action: "claim.confirmed", entity_type: "order", entity_id: order.id, details: { number: order.number, chat_id: data.chat_id, worker_id: claim.user_id } });
-    await notifyOwners({ title: "Заказ принят в работу", body: `${workerName} подтвердил заказ ${order.number} в одном из цехов`, link: `/chats/${data.chat_id}` , kind: "status_change" });
     return { ok: true };
   });
 
@@ -275,7 +203,7 @@ export const rejectClaim = createServerFn({ method: "POST" })
       .from("order_claims").select("*")
       .eq("order_id", data.order_id).eq("chat_id", data.chat_id)
       .eq("status", "pending").maybeSingle();
-      
+
     if (!claim) throw new Error("Нет ожидающего отклика");
 
     const role = await getRole(context);
@@ -288,14 +216,13 @@ export const rejectClaim = createServerFn({ method: "POST" })
 
     await supabaseAdmin.from("order_claims").update({ status: "rejected" }).eq("id", claim.id);
     const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", data.order_id).single();
-    const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", claim.user_id).single();
-    const workerName = profile?.display_name ?? "Сотрудник";
+    const workerName = (await getProfileName(supabaseAdmin, claim.user_id)) ?? "Сотрудник";
 
     const actorText = isClaimer ? `**${workerName}** отозвал свой отклик` : `Руководитель отклонил отклик **${workerName}**`;
 
     const { data: sysmsg, error: msgError } = await supabaseAdmin.from("messages").insert({
       chat_id: data.chat_id, is_ai: true, kind: "system", order_id: data.order_id,
-      content: `↩️ ${actorText} на заказ **${order?.number ?? ""}**${data.reason ? ` — ${data.reason}` : ""}. Заказ снова свободен.`,
+      content: `↩️ ${actorText} на заказ **${order?.number ?? ""}**${data.reason ? ` — ${data.reason}` : ""}. Заказ в этом секторе снова свободен.`,
     }).select().single();
     if (msgError) throw new Error(msgError.message);
     await logAudit({ actor_user_id: null, action: "message.ai_sent", entity_type: "message", entity_id: sysmsg?.id ?? null, details: { chat_id: data.chat_id, kind: "system", order_id: data.order_id } });
@@ -305,60 +232,56 @@ export const rejectClaim = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-
-export async function syncOrderStatusWithAssignments(supabaseAdmin: any, orderId: string) {
-  const { data: assignments } = await supabaseAdmin
-    .from("order_assignments")
-    .select("status")
-    .eq("order_id", orderId);
-
-  if (!assignments || assignments.length === 0) return;
-
-  const statuses = assignments.map((a: any) => a.status);
-  const allCompleted = statuses.every((s: string) => s === "completed");
-  const anyStalled = statuses.some((s: string) => s === "stalled");
-
-  let overallStatus: "new" | "in_progress" | "stalled" | "completed" = "in_progress";
-  if (allCompleted) {
-    overallStatus = "completed";
-  } else if (anyStalled) {
-    overallStatus = "stalled";
-  } else if (statuses.every((s: string) => s === "new")) {
-    overallStatus = "new";
-  }
-
-  await supabaseAdmin.from("orders").update({
-    status: overallStatus,
-    last_update_at: new Date().toISOString(),
-    ...(allCompleted ? { finish_date: new Date().toISOString().split("T")[0] } : {}),
-  }).eq("id", orderId);
-}
-
+// Смена статуса ОДНОГО assignment (order_id + chat_id).
+// Разрешено: owner/manager — любой статус любому сектору;
+// работник — только своему assignment (он responsible).
 export const updateOrderStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) => z.object({
     order_id: z.string().uuid(),
     chat_id: z.string().uuid(),
-    status: z.enum(["new", "in_progress", "stalled", "completed", "overdue"]),
+    status: AssignmentStatusEnum,
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
-    
-    const { data: assignment } = await supabaseAdmin.from("order_assignments").select("status").eq("order_id", data.order_id).eq("chat_id", data.chat_id).single();
-    const prevStatus = assignment?.status;
+    const role = await getRole(context);
 
-    const { error } = await supabaseAdmin.from("order_assignments").update({
+    if (role !== "owner" && role !== "manager") {
+      let allowed = false;
+      const { data: assignment, error: aErr } = await supabaseAdmin
+        .from("order_assignments")
+        .select("responsible_user_id")
+        .eq("order_id", data.order_id)
+        .eq("chat_id", data.chat_id)
+        .maybeSingle();
+      if (!aErr) {
+        allowed = assignment?.responsible_user_id === context.userId;
+      } else {
+        // До миграции: ответственный == responsible_user_id заказа
+        const { data: orderRow } = await supabaseAdmin
+          .from("orders")
+          .select("responsible_user_id")
+          .eq("id", data.order_id)
+          .maybeSingle();
+        allowed = orderRow?.responsible_user_id === context.userId;
+      }
+      if (!allowed) {
+        throw new Error("Только ответственный за этот сектор или руководство могут менять статус");
+      }
+    }
+
+    const { prevStatus } = await setAssignmentStatus(supabaseAdmin, {
+      orderId: data.order_id,
+      chatId: data.chat_id,
       status: data.status,
-    }).eq("order_id", data.order_id).eq("chat_id", data.chat_id);
-    if (error) throw new Error(error.message);
-
-    await syncOrderStatusWithAssignments(supabaseAdmin, data.order_id);
+    });
 
     const { data: prev } = await supabaseAdmin.from("orders").select("number").eq("id", data.order_id).single();
+    const chatName = (await getChatName(supabaseAdmin, data.chat_id)) ?? "цех";
 
-    await logAudit({ actor_user_id: context.userId, action: "order.status_changed", entity_type: "order", entity_id: data.order_id, details: { from: prevStatus, to: data.status, number: prev?.number, chat_id: data.chat_id } });
-    await notifyOwners({ title: `Статус заказа ${prev?.number ?? ""}`, body: `${prevStatus ?? "—"} → ${data.status}`, link: `/chats/${data.chat_id}`, kind: "status_change" });
+    await logAudit({ actor_user_id: context.userId, action: "assignment.status_changed", entity_type: "order", entity_id: data.order_id, details: { from: prevStatus, to: data.status, number: prev?.number, chat_id: data.chat_id, chat_name: chatName } });
+    await notifyOwners({ title: `Статус заказа ${prev?.number ?? ""} (${chatName})`, body: `${prevStatus ?? "—"} → ${data.status}`, link: `/chats/${data.chat_id}`, kind: "status_change" });
     return { ok: true };
   });
 
@@ -420,6 +343,7 @@ export const askNervaDirect = createServerFn({ method: "POST" })
     return await processAiAssistantQuery(context.userId, data.content, data.chat_id);
   });
 
+// Завершить/вернуть в работу СВОЙ сектор. Другие assignments не изменяются.
 export const toggleOrderSectorStatus = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) => z.object({
@@ -430,6 +354,34 @@ export const toggleOrderSectorStatus = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
+    const role = await getRole(context);
+
+    let assignment;
+    const { data: assignData, error: assignErr } = await supabaseAdmin
+      .from("order_assignments")
+      .select("responsible_user_id")
+      .eq("order_id", data.order_id)
+      .eq("chat_id", data.chat_id)
+      .maybeSingle();
+    if (!assignErr) assignment = assignData;
+
+    if (role !== "owner" && role !== "manager") {
+      let allowed = false;
+      if (assignment) {
+        allowed = assignment.responsible_user_id === context.userId;
+      } else {
+        // До миграции: ответственный == responsible_user_id заказа
+        const { data: orderRow } = await supabaseAdmin
+          .from("orders")
+          .select("responsible_user_id")
+          .eq("id", data.order_id)
+          .maybeSingle();
+        allowed = orderRow?.responsible_user_id === context.userId;
+      }
+      if (!allowed) {
+        throw new Error("Завершить работу сектора может только его ответственный или руководство");
+      }
+    }
 
     const { data: order, error: orderError } = await supabaseAdmin
       .from("orders")
@@ -439,21 +391,15 @@ export const toggleOrderSectorStatus = createServerFn({ method: "POST" })
 
     if (orderError || !order) throw new Error(orderError?.message || "Заказ не найден");
 
-    // Update the assignment status for this specific chat
     const newAssignmentStatus = data.is_completed ? "completed" : "in_progress";
-    const { error: assignErr } = await supabaseAdmin
-      .from("order_assignments")
-      .update({ status: newAssignmentStatus })
-      .eq("order_id", data.order_id)
-      .eq("chat_id", data.chat_id);
+    await setAssignmentStatus(supabaseAdmin, {
+      orderId: data.order_id,
+      chatId: data.chat_id,
+      status: newAssignmentStatus,
+    });
 
-    if (assignErr) throw new Error(assignErr.message);
-
-    // Sync overall order status based on all assignments
-    await syncOrderStatusWithAssignments(supabaseAdmin, data.order_id);
-
-    const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", context.userId).single();
-    const workerName = profile?.display_name || "Сотрудник";
+    const workerName = (await getProfileName(supabaseAdmin, context.userId)) ?? "Сотрудник";
+    const chatName = (await getChatName(supabaseAdmin, data.chat_id)) ?? "цех";
     const actionText = data.is_completed ? "завершил свою часть работы над заказом" : "вернул заказ в работу (в этом секторе)";
 
     await supabaseAdmin.from("messages").insert({
@@ -461,23 +407,102 @@ export const toggleOrderSectorStatus = createServerFn({ method: "POST" })
       is_ai: true,
       kind: "system",
       order_id: order.id,
-      content: `🔄 **${workerName}** ${actionText} **${order.number}**`
+      content: `🔄 **${workerName}** ${actionText} **${order.number}** (${chatName})`
     });
 
-    // Re-check if all assignments are completed
-    const { data: allAssignments } = await supabaseAdmin
+    // Все сектора завершили — заказ полностью выполнен
+    const { data: allAssignments, error: allErr } = await supabaseAdmin
       .from("order_assignments")
       .select("status")
       .eq("order_id", data.order_id);
 
-    const allCompleted = (allAssignments ?? []).every(a => a.status === "completed");
+    let allCompleted = false;
+    if (!allErr && allAssignments) {
+      const active = allAssignments.filter(a => a.status !== "cancelled");
+      allCompleted = active.length > 0 && active.every(a => a.status === "completed");
+    } else if (data.is_completed) {
+      // До миграции: единственный сектор == заказ
+      allCompleted = true;
+    }
 
-    if (allCompleted && order.status !== "completed") {
+    if (allCompleted) {
       await notifyOwners({ title: "Заказ полностью выполнен", body: `Заказ ${order.number} завершен всеми секторами`, link: `/dashboard`, kind: "status_change" });
     }
 
-    await logAudit({ actor_user_id: context.userId, action: "order.sector_toggled", entity_type: "order", entity_id: data.order_id, details: { chat_id: data.chat_id, is_completed: data.is_completed } });
+    await logAudit({ actor_user_id: context.userId, action: "order.sector_toggled", entity_type: "order", entity_id: data.order_id, details: { chat_id: data.chat_id, chat_name: chatName, is_completed: data.is_completed } });
 
+    return { ok: true };
+  });
+
+// Owner/manager: переназначить ответственного за конкретный сектор
+export const reassignAssignment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) => z.object({
+    order_id: z.string().uuid(),
+    chat_id: z.string().uuid(),
+    user_id: z.string().uuid().nullable(),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const role = await getRole(context);
+    if (role !== "owner" && role !== "manager") throw new Error("Forbidden: только руководство может переназначать ответственных");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { logAudit, notifyOwners } = await import("@/lib/audit.server");
+
+    await reassignAssignmentResponsible(supabaseAdmin, {
+      orderId: data.order_id,
+      chatId: data.chat_id,
+      userId: data.user_id,
+    });
+
+    const { data: order } = await supabaseAdmin.from("orders").select("number").eq("id", data.order_id).single();
+    const workerName = data.user_id ? ((await getProfileName(supabaseAdmin, data.user_id)) ?? "Сотрудник") : null;
+    const chatName = (await getChatName(supabaseAdmin, data.chat_id)) ?? "цех";
+
+    await supabaseAdmin.from("messages").insert({
+      chat_id: data.chat_id,
+      is_ai: true,
+      kind: "system",
+      order_id: data.order_id,
+      content: workerName
+        ? `👤 Руководство назначило **${workerName}** ответственным за заказ **${order?.number ?? ""}** (${chatName})`
+        : `👤 Руководство сняло ответственного с заказа **${order?.number ?? ""}** (${chatName}). Сектор снова ожидает принятия.`,
+    });
+
+    await logAudit({ actor_user_id: context.userId, action: "assignment.reassigned", entity_type: "order", entity_id: data.order_id, details: { chat_id: data.chat_id, chat_name: chatName, new_responsible: data.user_id, number: order?.number } });
+    await notifyOwners({ title: "Переназначение ответственного", body: workerName ? `${workerName} теперь отвечает за заказ ${order?.number ?? ""} в секторе «${chatName}»` : `Заказ ${order?.number ?? ""} в секторе «${chatName}» снова свободен`, link: `/chats/${data.chat_id}`, kind: "status_change" });
+    return { ok: true };
+  });
+
+// Owner: убрать сектор из заказа (assignment отменяется, история сохраняется)
+export const removeAssignment = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) => z.object({
+    order_id: z.string().uuid(),
+    chat_id: z.string().uuid(),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertOwner(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { logAudit } = await import("@/lib/audit.server");
+
+    await setAssignmentStatus(supabaseAdmin, { orderId: data.order_id, chatId: data.chat_id, status: "cancelled" });
+
+    const { data: order } = await supabaseAdmin.from("orders").select("number, dispatched_chat_ids").eq("id", data.order_id).single();
+    if (order) {
+      const remaining = ((order.dispatched_chat_ids as string[] | null) ?? []).filter((cid) => cid !== data.chat_id);
+      await supabaseAdmin.from("orders").update({ dispatched_chat_ids: remaining }).eq("id", data.order_id);
+    }
+    const chatName = (await getChatName(supabaseAdmin, data.chat_id)) ?? "цех";
+
+    await supabaseAdmin.from("messages").insert({
+      chat_id: data.chat_id,
+      is_ai: true,
+      kind: "system",
+      order_id: data.order_id,
+      content: `🚫 Заказ **${order?.number ?? ""}** отменён для сектора «${chatName}» решением руководства.`,
+    });
+
+    await logAudit({ actor_user_id: context.userId, action: "assignment.removed", entity_type: "order", entity_id: data.order_id, details: { chat_id: data.chat_id, chat_name: chatName, number: order?.number } });
     return { ok: true };
   });
 
@@ -489,11 +514,11 @@ export const deleteOrder = createServerFn({ method: "POST" })
     if (role !== "owner" && role !== "manager") throw new Error("Forbidden: Только владелец или менеджер могут удалять заказы");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit } = await import("@/lib/audit.server");
-    
+
     const { data: prev } = await supabaseAdmin.from("orders").select("number").eq("id", data.order_id).single();
     const { error } = await supabaseAdmin.from("orders").delete().eq("id", data.order_id);
     if (error) throw new Error(error.message);
-    
+
     await logAudit({ actor_user_id: context.userId, action: "order.deleted", entity_type: "order", entity_id: data.order_id, details: { number: prev?.number } });
     return { ok: true };
   });
@@ -504,9 +529,11 @@ export const updateOrderDetails = createServerFn({ method: "POST" })
     order_id: z.string().uuid(),
     number: z.string().min(1).optional(),
     nomenclature: z.string().optional(),
-    status: z.enum(["new", "in_progress", "stalled", "completed", "overdue"]).optional(),
+    status: AssignmentStatusEnum.optional(),
     finish_date: z.string().nullable().optional(),
     comment: z.string().nullable().optional(),
+    stage: z.string().optional(),
+    priority: z.string().optional(),
     responsible_user_id: z.string().uuid().nullable().optional(),
     chat_id: z.string().uuid().nullable().optional(),
   }).parse(d))
@@ -515,19 +542,33 @@ export const updateOrderDetails = createServerFn({ method: "POST" })
     if (role !== "owner" && role !== "manager") throw new Error("Forbidden");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit } = await import("@/lib/audit.server");
-    
+
     const updates: any = { last_update_at: new Date().toISOString() };
     if (data.number !== undefined) updates.number = data.number;
     if (data.nomenclature !== undefined) updates.nomenclature = data.nomenclature;
     if (data.status !== undefined) updates.status = data.status;
     if (data.finish_date !== undefined) updates.finish_date = data.finish_date;
     if (data.comment !== undefined) updates.comment = data.comment;
+    // Нативные колонки этапа и приоритета (приоритет относится к заказу в целом).
+    // До миграции колонок нет — пишем только JSON-метаданные ниже.
+    const { ordersHasNativeMeta } = await import("./assignments.server");
+    if (data.stage !== undefined && (await ordersHasNativeMeta(supabaseAdmin))) updates.stage = data.stage;
+    if (data.priority !== undefined && (await ordersHasNativeMeta(supabaseAdmin))) updates.priority = data.priority;
     if (data.responsible_user_id !== undefined) updates.responsible_user_id = data.responsible_user_id;
     if (data.chat_id !== undefined) updates.chat_id = data.chat_id;
 
+    // Если пришли stage/priority — синхронизируем и JSON-метаданные в comment (legacy display)
+    if (data.stage !== undefined || data.priority !== undefined) {
+      const { data: current } = await supabaseAdmin.from("orders").select("comment").eq("id", data.order_id).single();
+      updates.comment = buildOrderMetadata(
+        { stage: data.stage as any, priority: data.priority as any },
+        data.comment !== undefined ? data.comment : current?.comment
+      );
+    }
+
     const { error } = await supabaseAdmin.from("orders").update(updates).eq("id", data.order_id);
     if (error) throw new Error(error.message);
-    
+
     await logAudit({ actor_user_id: context.userId, action: "order.updated", entity_type: "order", entity_id: data.order_id, details: updates });
     return { ok: true };
   });
@@ -551,25 +592,27 @@ export const importOrders = createServerFn({ method: "POST" })
     if (role !== "owner" && role !== "manager") throw new Error("Forbidden");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { logAudit } = await import("@/lib/audit.server");
-    
+    const { ordersHasNativeMeta } = await import("./assignments.server");
+    const nativeMeta = await ordersHasNativeMeta(supabaseAdmin);
+
     // get existing orders to avoid duplicates
     const { data: existing } = await supabaseAdmin.from("orders").select("number");
     const existingSet = new Set(existing?.map(e => e.number) || []);
-    
+
     const toInsert = data.filter(o => !existingSet.has(o.number)).map(o => {
       let stage = "Новый";
       if (o.stage === "Производство") stage = "Производство";
       if (o.stage === "Логистика") stage = "Логистика";
       if (o.stage === "Готово") stage = "Готово";
-      
+
       let priority = "Обычный";
       if (o.priority === "Срочно") priority = "Срочно";
       if (o.priority === "Высокий" || o.priority === "Критично") priority = "Высокий";
       if (o.priority === "Средний") priority = "Средний";
-      
+
       const comment = buildOrderMetadata({ stage: stage as any, priority: priority as any, comment: o.comment || "" }, null);
-      
-      return {
+
+      const row: any = {
         number: o.number,
         order_date: o.order_date || null,
         finish_date: o.finish_date || null,
@@ -579,21 +622,27 @@ export const importOrders = createServerFn({ method: "POST" })
         created_by: context.userId,
         is_dispatched: false,
       };
+      // До миграции нативных колонок нет — этап/приоритет остаются в JSON-метаданных
+      if (nativeMeta) {
+        row.stage = stage;
+        row.priority = priority;
+      }
+      return row;
     });
-    
+
     if (toInsert.length > 0) {
       const { error } = await supabaseAdmin.from("orders").insert(toInsert);
       if (error) throw new Error(error.message);
-      
-      await logAudit({ 
-        actor_user_id: context.userId, 
-        action: "order.imported", 
-        entity_type: "order", 
-        entity_id: null, 
-        details: { count: toInsert.length } 
+
+      await logAudit({
+        actor_user_id: context.userId,
+        action: "order.imported",
+        entity_type: "order",
+        entity_id: null,
+        details: { count: toInsert.length }
       });
     }
-    
+
     return { ok: true, imported: toInsert.length, skipped: data.length - toInsert.length };
   });
 
@@ -607,9 +656,9 @@ export const voiceDispatchOrder = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { aiGenerateOrderCard } = await import("./orders.server");
     const { logAudit } = await import("@/lib/audit.server");
-    
+
     const textLower = data.text.toLowerCase();
-    
+
     // Fetch all non-dispatched orders
     const { data: undispatched } = await supabaseAdmin.from("orders").select("*").eq("is_dispatched", false);
     if (!undispatched || undispatched.length === 0) {
@@ -648,37 +697,19 @@ export const voiceDispatchOrder = createServerFn({ method: "POST" })
       };
     }
 
-    // Dispatch order card to matched chats
+    // Dispatch order card to matched chats (merge with existing sectors)
     const orderInput = {
       number: targetOrder.number, order_date: targetOrder.order_date, finish_date: targetOrder.finish_date,
       nomenclature: targetOrder.nomenclature, customer_order: targetOrder.customer_order, comment: targetOrder.comment,
       chat_id: null, follow_up_interval_minutes: targetOrder.follow_up_interval_minutes,
     };
     const content = await aiGenerateOrderCard(orderInput);
-    let firstMsgId: string | null = null;
+
+    await dispatchOrderToChats(supabaseAdmin, { order: targetOrder, chatIds: matchedChatIds, cardContent: content });
 
     for (const cid of matchedChatIds) {
-      const { data: m } = await supabaseAdmin.from("messages").insert({
-        chat_id: cid, is_ai: true, content, order_id: targetOrder.id, kind: "order_card",
-      }).select().single();
-      if (!firstMsgId && m) firstMsgId = m.id;
-      await logAudit({ actor_user_id: context.userId, action: "message.ai_sent", entity_type: "message", entity_id: m?.id ?? null, details: { chat_id: cid, kind: "order_card", order_id: targetOrder.id } });
+      await logAudit({ actor_user_id: context.userId, action: "message.ai_sent", entity_type: "message", entity_id: null, details: { chat_id: cid, kind: "order_card", order_id: targetOrder.id } });
     }
-
-    await supabaseAdmin.from("orders").update({
-      is_dispatched: true,
-      dispatched_at: new Date().toISOString(),
-      dispatched_chat_ids: matchedChatIds,
-      ai_message_id: firstMsgId,
-      status: "new",
-    }).eq("id", targetOrder.id);
-
-    const assignments = matchedChatIds.map(cid => ({
-      order_id: targetOrder.id,
-      chat_id: cid,
-      status: "new" as const,
-    }));
-    await supabaseAdmin.from("order_assignments").upsert(assignments, { onConflict: "order_id,chat_id" });
 
     await logAudit({ actor_user_id: context.userId, action: "order.dispatched", entity_type: "order", entity_id: targetOrder.id, details: { chat_ids: matchedChatIds, number: targetOrder.number, voice: true } });
 
@@ -698,6 +729,14 @@ export const loadAllAssignments = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async () => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { assignmentsTableExists, synthesizeAssignments } = await import("./assignments.server");
+
+    // До миграции синтезируем assignments из legacy-полей заказов
+    if (!(await assignmentsTableExists(supabaseAdmin))) {
+      const { data: orders } = await supabaseAdmin.from("orders").select("*");
+      return (orders ?? []).flatMap((o: any) => synthesizeAssignments(o));
+    }
+
     const { data } = await supabaseAdmin.from("order_assignments").select("*");
     return data ?? [];
   });
@@ -711,6 +750,18 @@ export const loadChatAssignments = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     if (data.order_ids.length === 0) return [];
+
+    const { assignmentsTableExists, synthesizeAssignments } = await import("./assignments.server");
+    if (!(await assignmentsTableExists(supabaseAdmin))) {
+      const { data: orders } = await supabaseAdmin
+        .from("orders")
+        .select("*")
+        .in("id", data.order_ids);
+      return (orders ?? [])
+        .flatMap((o: any) => synthesizeAssignments(o))
+        .filter((a: any) => a.chat_id === data.chat_id);
+    }
+
     const { data: assignments } = await supabaseAdmin
       .from("order_assignments")
       .select("order_id, status, responsible_user_id")

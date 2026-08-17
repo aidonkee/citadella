@@ -44,26 +44,45 @@ function DM() {
       const { data: dm } = await supabase.from("chats").select("id").eq("is_dm", true).eq("dm_user_id", user.id).maybeSingle();
       if (dm) setDmId(dm.id);
 
-      // Загрузка текущей активной задачи
+      // Загрузка текущей активной задачи (per-assignment архитектура)
       const fetchActiveOrder = async () => {
-        const { data: orders } = await supabase
-          .from("orders")
-          .select("number, nomenclature, status")
+        const { data: assigns, error: assignErr } = await supabase
+          .from("order_assignments")
+          .select("order_id")
           .eq("responsible_user_id", user.id)
-          .in("status", ["in_progress", "stalled", "new"])
-          .order("created_at", { ascending: false })
+          .in("status", ["in_progress", "stalled", "blocked"])
+          .order("updated_at", { ascending: false })
           .limit(1);
-        
-        if (orders && orders.length > 0) {
-          setActiveOrder(orders[0]);
+
+        if (assignErr) {
+          // До миграции: legacy-схема — активный заказ по responsible_user_id
+          const { data: legacyOrders } = await supabase
+            .from("orders")
+            .select("number, nomenclature, status")
+            .eq("responsible_user_id", user.id)
+            .in("status", ["in_progress", "stalled", "new"])
+            .order("created_at", { ascending: false })
+            .limit(1);
+          setActiveOrder(legacyOrders?.[0] ?? null);
+          return;
+        }
+
+        if (assigns && assigns.length > 0) {
+          const { data: orders } = await supabase
+            .from("orders")
+            .select("number, nomenclature, status")
+            .eq("id", assigns[0].order_id)
+            .limit(1);
+          setActiveOrder(orders?.[0] ?? null);
         } else {
           setActiveOrder(null);
         }
       };
       fetchActiveOrder();
 
-      // Подписка на обновления заказов пользователя
+      // Подписка на обновления назначений пользователя (до миграции — на заказы)
       const oChannel = supabase.channel(`active-order-${user.id}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "order_assignments", filter: `responsible_user_id=eq.${user.id}` }, fetchActiveOrder)
         .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: `responsible_user_id=eq.${user.id}` }, fetchActiveOrder)
         .subscribe();
 

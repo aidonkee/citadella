@@ -5,12 +5,13 @@ const LOVABLE_AIG_RUN_ID_HEADER = "X-Lovable-AIG-Run-ID";
 
 /**
  * Creates an AI provider.
- * - If apiKey is a Gemini key (starts with "AIzaSy"), uses @ai-sdk/google directly.
+ * - If apiKey is a Gemini key (starts with "AIzaSy" or "AQ." — Google's new key format),
+ *   uses @ai-sdk/google directly.
  * - Otherwise, routes through the Lovable AI Gateway (OpenAI-compatible).
  */
 export function createLovableAiGatewayProvider(apiKey: string, initialRunId?: string) {
   // Detect Gemini API key — use native Google provider directly
-  if (apiKey.startsWith("AIzaSy")) {
+  if (apiKey.startsWith("AIzaSy") || apiKey.startsWith("AQ.")) {
     const google = createGoogleGenerativeAI({ apiKey });
 
     // Wrap in a compatible interface that accepts "google/model-name" or just "model-name"

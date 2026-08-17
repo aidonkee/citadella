@@ -1,20 +1,23 @@
 import { genAI, GENERATION_MODEL } from "./client";
-import { agentTools, executeToolCall } from "./tools";
+import { agentTools, executeToolCall, type ToolContext } from "./tools";
 import { isOffTopicQuery, REJECTION_MESSAGE, SYSTEM_NEGATIVE_PROMPTS } from "./guardrails";
 
-export interface AgentContext {
-  userId?: string;
-  userRole?: string;
+export interface AgentContext extends ToolContext {}
+
+export interface AgentResult {
+  reply: string;
+  affectedOrders: string[];
 }
 
 export class RAGAgent {
   private model;
   private context: AgentContext;
+  private affectedOrders: Set<string> = new Set();
 
   constructor(context: AgentContext = {}) {
     this.context = context;
-    const roleInstruction = context.userRole 
-      ? `Текущая роль пользователя: ${context.userRole}.`
+    const roleInstruction = context.userRole
+      ? `Текущая роль пользователя: ${context.userRole} (owner — владелец, manager — менеджер, worker — работник цеха).`
       : "";
     this.model = genAI.getGenerativeModel({
       model: GENERATION_MODEL,
@@ -23,19 +26,19 @@ export class RAGAgent {
     });
   }
 
-  async run(userMessage: string): Promise<string> {
+  async run(userMessage: string): Promise<AgentResult> {
     console.log(`User (${this.context.userRole || "guest"}): ${userMessage}`);
 
     // Pre-filter check: Block non-manufacturing queries locally before spending tokens
     if (isOffTopicQuery(userMessage)) {
       console.log(`[RAGAgent Guardrail] Blocked off-topic query: "${userMessage}"`);
-      return REJECTION_MESSAGE;
+      return { reply: REJECTION_MESSAGE, affectedOrders: [] };
     }
 
     // Use generateContent directly for better tool call control
     const history: any[] = [{ role: "user", parts: [{ text: userMessage }] }];
 
-    for (let iteration = 0; iteration < 5; iteration++) {
+    for (let iteration = 0; iteration < 8; iteration++) {
       const result = await this.model.generateContent({ contents: history });
       const response = result.response;
       const candidate = response.candidates?.[0];
@@ -48,7 +51,10 @@ export class RAGAgent {
       if (!hasFunctionCall) {
         // Final text response
         const textPart = parts.find((p: any) => p.text);
-        return textPart?.text ?? "Нет ответа";
+        return {
+          reply: textPart?.text ?? "Нет ответа",
+          affectedOrders: Array.from(this.affectedOrders),
+        };
       }
 
       // Add model response to history
@@ -62,7 +68,10 @@ export class RAGAgent {
         console.log(`[Agent Tool Call] ${name}(${JSON.stringify(args)}) for role ${this.context.userRole}`);
 
         try {
-          const toolResult = await executeToolCall(name, args, this.context);
+          const toolResult = await executeToolCall(name, args, {
+            ...this.context,
+            affectedOrders: this.affectedOrders,
+          });
           // API requires response to be a plain object, not an array
           const safeResult = Array.isArray(toolResult)
             ? { items: toolResult }
@@ -85,6 +94,6 @@ export class RAGAgent {
       history.push({ role: "user", parts: functionResultParts });
     }
 
-    return "Агент не смог завершить запрос.";
+    return { reply: "Агент не смог завершить запрос.", affectedOrders: Array.from(this.affectedOrders) };
   }
 }

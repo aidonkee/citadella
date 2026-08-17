@@ -32,6 +32,7 @@ function OrdersAdmin() {
   const { isOwner, loading } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [chats, setChats] = useState<{ id: string; name: string }[]>([]);
+  const [assignments, setAssignments] = useState<{ order_id: string; chat_id: string; status: string; responsible_user_id: string | null }[]>([]);
   const [open, setOpen] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -40,6 +41,19 @@ function OrdersAdmin() {
     setOrders((data ?? []) as Order[]);
     const { data: cs } = await supabase.from("chats").select("id, name").eq("is_dm", false);
     setChats(cs ?? []);
+    const { data: oa, error: oaErr } = await supabase.from("order_assignments").select("order_id, chat_id, status, responsible_user_id");
+    if (oaErr) {
+      // До миграции: сектора = dispatched_chat_ids / chat_id заказа
+      setAssignments(((data ?? []) as any[]).flatMap((o: any) => {
+        const sectors = [...(Array.isArray(o.dispatched_chat_ids) ? o.dispatched_chat_ids : []), ...(o.chat_id ? [o.chat_id] : [])];
+        return Array.from(new Set(sectors.filter(Boolean))).map((cid) => ({
+          order_id: o.id, chat_id: cid as string,
+          status: o.responsible_user_id ? "in_progress" : o.status, responsible_user_id: o.responsible_user_id,
+        }));
+      }));
+    } else {
+      setAssignments(oa ?? []);
+    }
   };
   useEffect(() => { load(); }, []);
 
@@ -104,18 +118,38 @@ function OrdersAdmin() {
           <Table>
             <TableHeader><TableRow>
               <TableHead>Номер</TableHead><TableHead>Номенклатура</TableHead>
-              <TableHead>Срок</TableHead><TableHead>Чат</TableHead><TableHead>Статус</TableHead>
+              <TableHead>Срок</TableHead><TableHead>Сектора</TableHead><TableHead>Статус</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {orders.map((o) => (
-                <TableRow key={o.id}>
-                  <TableCell className="font-mono text-xs">{o.number}</TableCell>
-                  <TableCell className="max-w-md truncate">{o.nomenclature}</TableCell>
-                  <TableCell>{o.finish_date ?? "—"}</TableCell>
-                  <TableCell>{o.chat_id ? chats.find((c) => c.id === o.chat_id)?.name ?? "—" : <span className="text-muted-foreground">не назначен</span>}</TableCell>
-                  <TableCell><Badge variant="outline" className={STATUS_COLOR[o.status]}>{STATUS_LABEL[o.status]}</Badge></TableCell>
-                </TableRow>
-              ))}
+              {orders.map((o) => {
+                const oa = assignments.filter(a => a.order_id === o.id && a.status !== "cancelled");
+                return (
+                  <TableRow key={o.id}>
+                    <TableCell className="font-mono text-xs">{o.number}</TableCell>
+                    <TableCell className="max-w-md truncate">{o.nomenclature}</TableCell>
+                    <TableCell>{o.finish_date ?? "—"}</TableCell>
+                    <TableCell>
+                      {oa.length === 0 ? (
+                        <span className="text-muted-foreground text-xs">не распределён</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {oa.map(a => (
+                            <span key={a.chat_id} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                              a.status === "completed" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                              a.status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                              a.status === "stalled" || a.status === "blocked" ? "bg-red-50 text-red-700 border-red-200" :
+                              "bg-amber-50 text-amber-700 border-amber-200"
+                            }`}>
+                              {chats.find(c => c.id === a.chat_id)?.name ?? "цех"}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell><Badge variant="outline" className={STATUS_COLOR[o.status]}>{STATUS_LABEL[o.status]}</Badge></TableCell>
+                  </TableRow>
+                );
+              })}
               {orders.length === 0 && <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">Заказов пока нет</TableCell></TableRow>}
             </TableBody>
           </Table>

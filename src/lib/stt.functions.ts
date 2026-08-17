@@ -64,7 +64,7 @@ export const transcribeAudio = createServerFn({ method: "POST" })
       let mimeType = data.mime.split(";")[0].trim();
       if (!mimeType || mimeType === "unknown") mimeType = "audio/webm";
       
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
