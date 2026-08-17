@@ -291,57 +291,77 @@ function Dashboard() {
                         </TableCell>
 
                         {departmentChats.map(c => {
-                          let a = assignments.find(x => x.order_id === o.id && x.chat_id === c.id);
-                          const isDispatched = Boolean(
-                            a ||
-                            (Array.isArray(o.dispatched_chat_ids) && o.dispatched_chat_ids.includes(c.id)) ||
-                            o.chat_id === c.id
-                          );
+                          const a = assignments.find(x => x.order_id === o.id && x.chat_id === c.id);
 
-                          if (!isDispatched) {
+                          // No assignment record → not dispatched to this chat
+                          if (!a) {
                             return (
                               <TableCell key={c.id} className="text-center py-3 px-4 whitespace-nowrap">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-50 text-slate-400 border border-slate-200/50">
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-50 text-slate-400 border border-slate-200/50">
                                   ⚪ Не назначался
                                 </span>
                               </TableCell>
                             );
                           }
 
-                          if (!a) {
-                            a = { status: "new", responsible_user_id: null };
-                          }
+                          // Assignment exists — show status based on assignment record
+                          const workerName = a.responsible_user_id ? profiles[a.responsible_user_id] : null;
+
                           if (a.status === "completed") {
                             return (
                               <TableCell key={c.id} className="text-center py-3 px-4 whitespace-nowrap">
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
-                                  🟢 Сделано
-                                </span>
+                                <div className="inline-flex flex-col items-center">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                                    ✅ Сделано
+                                  </span>
+                                  {workerName && (
+                                    <span className="text-[10px] text-slate-500 font-medium mt-0.5">
+                                      {workerName}
+                                    </span>
+                                  )}
+                                </div>
                               </TableCell>
                             );
                           }
-                          if (a.status === "new" && !a.responsible_user_id) {
+
+                          if (a.status === "stalled") {
                             return (
                               <TableCell key={c.id} className="text-center py-3 px-4 whitespace-nowrap">
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
-                                  🟡 Ожидает отклика
-                                </span>
+                                <div className="inline-flex flex-col items-center">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-50 text-red-700 border border-red-200 shadow-2xs">
+                                    ⚠️ Проблема
+                                  </span>
+                                  {workerName && (
+                                    <span className="text-[10px] text-slate-500 font-medium mt-0.5">
+                                      {workerName}
+                                    </span>
+                                  )}
+                                </div>
                               </TableCell>
                             );
                           }
-                          const workerName = a.responsible_user_id ? profiles[a.responsible_user_id] : null;
+
+                          if (a.status === "in_progress" && a.responsible_user_id) {
+                            return (
+                              <TableCell key={c.id} className="text-center py-3 px-4 whitespace-nowrap">
+                                <div className="inline-flex flex-col items-center">
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
+                                    🔵 В работе
+                                  </span>
+                                  <span className="text-[10px] text-blue-600 font-semibold mt-0.5">
+                                    {workerName ?? "Сотрудник"}
+                                  </span>
+                                </div>
+                              </TableCell>
+                            );
+                          }
+
+                          // Default: status is "new" or "in_progress" without responsible_user_id → waiting for claim
                           return (
                             <TableCell key={c.id} className="text-center py-3 px-4 whitespace-nowrap">
-                              <div className="inline-flex flex-col items-center">
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs">
-                                  🔴 В работе
-                                </span>
-                                {workerName && (
-                                  <span className="text-[10px] text-slate-600 font-semibold mt-0.5">
-                                    {workerName}
-                                  </span>
-                                )}
-                              </div>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+                                🟡 Ожидает отклика
+                              </span>
                             </TableCell>
                           );
                         })}

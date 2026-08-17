@@ -5,13 +5,12 @@ import type { Database } from './types';
 // Provide native-like WebSocket transport for Node.js < 22 (SSR / dev server)
 // In browsers this stays undefined and Supabase uses the native WebSocket.
 let wsTransport: unknown;
-if (typeof window === 'undefined') {
+if (typeof window === 'undefined' && typeof (globalThis as any).WebSocket === 'undefined') {
   try {
-    // Dynamic require so Vite does not bundle "ws" into the client chunk
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     wsTransport = require('ws');
   } catch {
-    // "ws" not installed – silence, realtime won't be used server-side here
+    // silence
   }
 }
 
@@ -41,10 +40,9 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 
 
 function createSupabaseClient() {
-  // Use import.meta.env for client-side (Vite build-time replacement)
-  // Fall back to process.env for SSR, and fallback to hardcoded production keys for standalone APKs
-  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "https://jvvcholnwdinjbexbjvl.supabase.co";
-  const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp2dmNob2xud2RpbmpiZXhianZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNzI2MDQsImV4cCI6MjA5OTg0ODYwNH0.qnUROXRHYcLJ-7i9WMIOuqtusTiZ3NwmUcVcvEmv8Xk";
+  const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : ((typeof process !== "undefined" ? process.env : {}) as any);
+  const SUPABASE_URL = env.VITE_SUPABASE_URL || env.SUPABASE_URL || "https://jvvcholnwdinjbexbjvl.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp2dmNob2xud2RpbmpiZXhianZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNzI2MDQsImV4cCI6MjA5OTg0ODYwNH0.qnUROXRHYcLJ-7i9WMIOuqtusTiZ3NwmUcVcvEmv8Xk";
 
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     const missing = [

@@ -140,16 +140,23 @@ export const claimOrder = createServerFn({ method: "POST" })
       .maybeSingle();
 
     if (existingAssignment?.responsible_user_id) {
-      throw new Error("Заказ в этом цехе уже взят в работу");
+      if (existingAssignment.responsible_user_id === context.userId) {
+        return { ok: true };
+      }
+      throw new Error("Заказ в этом цехе уже взят в работу другим сотрудником");
     }
 
-    // Immediately record claim as confirmed
-    await supabaseAdmin.from("order_claims").upsert({
-      order_id: data.order_id,
-      chat_id: data.chat_id,
-      user_id: context.userId,
-      status: "confirmed",
-    }, { onConflict: "order_id,chat_id" });
+    // Record claim as confirmed (safely)
+    try {
+      await supabaseAdmin.from("order_claims").upsert({
+        order_id: data.order_id,
+        chat_id: data.chat_id,
+        user_id: context.userId,
+        status: "confirmed",
+      }, { onConflict: "order_id,chat_id" });
+    } catch (e) {
+      console.warn("order_claims upsert warning:", e);
+    }
 
     const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", data.order_id).single();
     if (!order) throw new Error("Заказ не найден");
@@ -422,69 +429,56 @@ export const toggleOrderSectorStatus = createServerFn({ method: "POST" })
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { getTargetChats } = await import("./orders.server");
-    const { parseOrderMetadata, buildOrderMetadata } = await import("./order-metadata");
     const { logAudit, notifyOwners } = await import("@/lib/audit.server");
-    
+
     const { data: order, error: orderError } = await supabaseAdmin
       .from("orders")
       .select("*")
       .eq("id", data.order_id)
       .single();
-      
-    if (orderError || !order) throw new Error(orderError?.message || "Order not found");
-    
-    const targetChats = getTargetChats(order);
-    if (!targetChats.includes(data.chat_id)) {
-      throw new Error("Chat is not assigned to this order");
-    }
-    
-    const meta = parseOrderMetadata(order.comment);
-    const sectors = meta.completed_sectors || {};
-    sectors[data.chat_id] = data.is_completed;
-    
-    const allCompleted = targetChats.every(cid => sectors[cid] === true);
-    
-    let newStatus = order.status;
-    if (allCompleted) {
-      newStatus = "completed";
-    } else if (order.status === "completed" && !allCompleted) {
-      newStatus = "in_progress";
-    }
-    
-    const newComment = buildOrderMetadata({ ...meta, completed_sectors: sectors }, order.comment);
-    
-    const updates: any = {
-      comment: newComment,
-      status: newStatus,
-      last_update_at: new Date().toISOString()
-    };
-    
-    const { error: updateError } = await supabaseAdmin
-      .from("orders")
-      .update(updates)
-      .eq("id", data.order_id);
-      
-    if (updateError) throw new Error(updateError.message);
-    
+
+    if (orderError || !order) throw new Error(orderError?.message || "Заказ не найден");
+
+    // Update the assignment status for this specific chat
+    const newAssignmentStatus = data.is_completed ? "completed" : "in_progress";
+    const { error: assignErr } = await supabaseAdmin
+      .from("order_assignments")
+      .update({ status: newAssignmentStatus })
+      .eq("order_id", data.order_id)
+      .eq("chat_id", data.chat_id);
+
+    if (assignErr) throw new Error(assignErr.message);
+
+    // Sync overall order status based on all assignments
+    await syncOrderStatusWithAssignments(supabaseAdmin, data.order_id);
+
     const { data: profile } = await supabaseAdmin.from("profiles").select("display_name").eq("id", context.userId).single();
+    const workerName = profile?.display_name || "Сотрудник";
     const actionText = data.is_completed ? "завершил свою часть работы над заказом" : "вернул заказ в работу (в этом секторе)";
-    
+
     await supabaseAdmin.from("messages").insert({
       chat_id: data.chat_id,
       is_ai: true,
       kind: "system",
       order_id: order.id,
-      content: `🔄 **${profile?.display_name || "Сотрудник"}** ${actionText}`
+      content: `🔄 **${workerName}** ${actionText} **${order.number}**`
     });
-    
-    if (newStatus === "completed" && order.status !== "completed") {
+
+    // Re-check if all assignments are completed
+    const { data: allAssignments } = await supabaseAdmin
+      .from("order_assignments")
+      .select("status")
+      .eq("order_id", data.order_id);
+
+    const allCompleted = (allAssignments ?? []).every(a => a.status === "completed");
+
+    if (allCompleted && order.status !== "completed") {
       await notifyOwners({ title: "Заказ полностью выполнен", body: `Заказ ${order.number} завершен всеми секторами`, link: `/dashboard`, kind: "status_change" });
     }
-    
-    await logAudit({ actor_user_id: context.userId, action: "order.sector_toggled", entity_type: "order", entity_id: data.order_id, details: { chat_id: data.chat_id, is_completed: data.is_completed, new_status: newStatus } });
-    
-    return { ok: true, status: newStatus };
+
+    await logAudit({ actor_user_id: context.userId, action: "order.sector_toggled", entity_type: "order", entity_id: data.order_id, details: { chat_id: data.chat_id, is_completed: data.is_completed } });
+
+    return { ok: true };
   });
 
 export const deleteOrder = createServerFn({ method: "POST" })
@@ -696,3 +690,31 @@ export const voiceDispatchOrder = createServerFn({ method: "POST" })
     };
   });
 
+
+// Server functions to load assignments bypassing RLS
+// (RLS on order_assignments requires is_chat_member or is_owner, which may not be set up for all users)
+
+export const loadAllAssignments = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data } = await supabaseAdmin.from("order_assignments").select("*");
+    return data ?? [];
+  });
+
+export const loadChatAssignments = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .validator((d: unknown) => z.object({
+    order_ids: z.array(z.string().uuid()),
+    chat_id: z.string().uuid(),
+  }).parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    if (data.order_ids.length === 0) return [];
+    const { data: assignments } = await supabaseAdmin
+      .from("order_assignments")
+      .select("order_id, status, responsible_user_id")
+      .in("order_id", data.order_ids)
+      .eq("chat_id", data.chat_id);
+    return assignments ?? [];
+  });

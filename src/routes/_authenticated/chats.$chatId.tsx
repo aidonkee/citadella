@@ -40,48 +40,51 @@ function ChatPage() {
   const [sending, setSending] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
 
+  // load() extracted to component scope so event handlers can call it
+  const load = async () => {
+    const { data: allChats } = await supabase.from("chats").select("id, name");
+    if (allChats) setChatNames(Object.fromEntries(allChats.map(c => [c.id, c.name])));
+
+    const { data: chat } = await supabase.from("chats").select("name").eq("id", chatId).single();
+    setChatName(chat?.name ?? "");
+    const { data } = await supabase.from("messages").select("*").eq("chat_id", chatId).order("created_at");
+    setMessages((data ?? []) as Msg[]);
+
+    const messageUserIds = (data ?? []).map((m) => m.sender_user_id).filter(Boolean) as string[];
+    const orderIds = [...new Set((data ?? []).map((m) => m.order_id).filter(Boolean))] as string[];
+
+    let claimUserIds: string[] = [];
+    if (orderIds.length) {
+      const { data: os } = await supabase.from("orders").select("id, status, number, responsible_user_id, comment, chat_id, dispatched_chat_ids").in("id", orderIds);
+
+      // Load assignments for THIS chat specifically
+      const { data: assignments } = await supabase.from("order_assignments").select("order_id, status, responsible_user_id").in("order_id", orderIds).eq("chat_id", chatId);
+      const assignMap = new Map((assignments ?? []).map(a => [a.order_id, a]));
+
+      setOrders(Object.fromEntries((os ?? []).map((o) => {
+        const assign = assignMap.get(o.id);
+        return [o.id, {
+          ...o,
+          // Use per-chat assignment status, not global order status
+          status: assign ? assign.status : o.status,
+          responsible_user_id: assign?.responsible_user_id ?? null,
+        }];
+      })));
+
+      const { data: cs } = await supabase.from("order_claims").select("order_id, user_id, status").in("order_id", orderIds).eq("chat_id", chatId).neq("status", "rejected");
+      setClaims(Object.fromEntries((cs ?? []).map((c) => [c.order_id, { user_id: c.user_id, status: c.status }])));
+      claimUserIds = (cs ?? []).map(c => c.user_id).filter(Boolean);
+    }
+
+    const assignUserIds = (orderIds.length ? (await supabase.from("order_assignments").select("responsible_user_id").in("order_id", orderIds)).data ?? [] : []).map(a => a.responsible_user_id).filter(Boolean) as string[];
+    const allUserIds = [...new Set([...messageUserIds, ...claimUserIds, ...assignUserIds])];
+    if (allUserIds.length) {
+      const { data: ps } = await supabase.from("profiles").select("id, display_name").in("id", allUserIds);
+      setProfiles(Object.fromEntries((ps ?? []).map((p) => [p.id, p.display_name])));
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      const { data: allChats } = await supabase.from("chats").select("id, name");
-      if (allChats) setChatNames(Object.fromEntries(allChats.map(c => [c.id, c.name])));
-
-      const { data: chat } = await supabase.from("chats").select("name").eq("id", chatId).single();
-      setChatName(chat?.name ?? "");
-      const { data } = await supabase.from("messages").select("*").eq("chat_id", chatId).order("created_at");
-      setMessages((data ?? []) as Msg[]);
-      
-      const messageUserIds = (data ?? []).map((m) => m.sender_user_id).filter(Boolean) as string[];
-      const orderIds = [...new Set((data ?? []).map((m) => m.order_id).filter(Boolean))] as string[];
-
-      let claimUserIds: string[] = [];
-      if (orderIds.length) {
-        const { data: os } = await supabase.from("orders").select("id, status, number, responsible_user_id, comment, chat_id, dispatched_chat_ids").in("id", orderIds);
-        
-        // Load assignments for this chat
-        const { data: assignments } = await supabase.from("order_assignments").select("order_id, status, responsible_user_id").in("order_id", orderIds).eq("chat_id", chatId);
-        const assignMap = new Map((assignments ?? []).map(a => [a.order_id, a]));
-
-        setOrders(Object.fromEntries((os ?? []).map((o) => {
-          const assign = assignMap.get(o.id);
-          return [o.id, { 
-            ...o, 
-            status: assign ? assign.status : o.status,
-            responsible_user_id: assign ? assign.responsible_user_id : o.responsible_user_id,
-          }];
-        })));
-        
-        const { data: cs } = await supabase.from("order_claims").select("order_id, user_id, status").in("order_id", orderIds).eq("chat_id", chatId).neq("status", "rejected");
-        setClaims(Object.fromEntries((cs ?? []).map((c) => [c.order_id, { user_id: c.user_id, status: c.status }])));
-        claimUserIds = (cs ?? []).map(c => c.user_id).filter(Boolean);
-      }
-
-      const assignUserIds = (orderIds.length ? (await supabase.from("order_assignments").select("responsible_user_id").in("order_id", orderIds)).data ?? [] : []).map(a => a.responsible_user_id).filter(Boolean) as string[];
-      const allUserIds = [...new Set([...messageUserIds, ...claimUserIds, ...assignUserIds])];
-      if (allUserIds.length) {
-        const { data: ps } = await supabase.from("profiles").select("id, display_name").in("id", allUserIds);
-        setProfiles(Object.fromEntries((ps ?? []).map((p) => [p.id, p.display_name])));
-      }
-    };
     load();
     const ch = supabase.channel(`chat-${chatId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` }, load)
@@ -104,27 +107,54 @@ function ChatPage() {
   };
 
   const onClaim = async (orderId: string) => {
-    try { await claimOrder({ data: { order_id: orderId, chat_id: chatId } as any }); toast.success("Отклик отправлен"); }
-    catch (err: any) { toast.error(err.message); }
+    try {
+      // Optimistic UI — instantly show "В работе" before server responds
+      setOrders((prev) => ({
+        ...prev,
+        [orderId]: {
+          ...prev[orderId],
+          status: "in_progress" as OrderStatus,
+          responsible_user_id: user?.id ?? null,
+        },
+      }));
+      await claimOrder({ data: { order_id: orderId, chat_id: chatId } as any });
+      toast.success("Заказ взят в работу");
+      await load();
+    } catch (err: any) {
+      toast.error(err.message);
+      await load(); // revert optimistic update
+    }
   };
 
   const onConfirm = async (orderId: string) => {
-    try { await confirmClaim({ data: { order_id: orderId, chat_id: chatId } as any }); toast.success("Заказ подтверждён и взят в работу"); }
-    catch (err: any) { toast.error(err.message); }
+    try {
+      await confirmClaim({ data: { order_id: orderId, chat_id: chatId } as any });
+      toast.success("Заказ подтверждён и взят в работу");
+      await load();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const onReject = async (orderId: string) => {
     const reason = window.prompt("Причина отказа (необязательно):") ?? undefined;
-    try { await rejectClaim({ data: { order_id: orderId, chat_id: chatId, reason } as any }); toast.success("Отклик отклонён"); }
-    catch (err: any) { toast.error(err.message); }
+    try {
+      await rejectClaim({ data: { order_id: orderId, chat_id: chatId, reason } as any });
+      toast.success("Отклик отклонён");
+      await load();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const onToggleSector = async (orderId: string, isCompleted: boolean) => {
-    try { 
-      await toggleOrderSectorStatus({ data: { order_id: orderId, chat_id: chatId, is_completed: isCompleted } as any }); 
+    try {
+      await toggleOrderSectorStatus({ data: { order_id: orderId, chat_id: chatId, is_completed: isCompleted } as any });
       toast.success(isCompleted ? "Сектор завершил работу" : "Сектор вернул заказ в работу");
+      await load();
+    } catch (err: any) {
+      toast.error(err.message);
     }
-    catch (err: any) { toast.error(err.message); }
   };
 
   return (
@@ -152,13 +182,10 @@ function ChatPage() {
             <span className="font-semibold text-slate-500 flex items-center gap-1"><Layers className="size-3" /> Заказы в чате:</span>
             {Object.values(orders).map(o => {
               const meta = parseOrderMetadata(o.comment);
-              const priorityStyle = meta.priority === "Срочно" ? "bg-red-100 text-red-700 border-red-200" : "bg-slate-200 text-slate-700 border-slate-300";
               return (
                 <div key={o.id} className="flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-slate-200 shadow-2xs">
                   <span className="font-bold text-slate-800">#{o.number}</span>
                   <Badge variant="outline" className={`text-[10px] px-1 py-0 ${STATUS_COLOR[o.status]}`}>{STATUS_LABEL[o.status]}</Badge>
-                  <div className="w-[1px] h-4 bg-slate-200 mx-0.5"></div>
-                  <span className="truncate max-w-[100px] text-slate-600 font-medium" title={meta.comment}>{meta.comment || ""}</span>
                 </div>
               );
             })}
@@ -183,51 +210,36 @@ function ChatPage() {
                     <ReactMarkdown>{stripRawJsonMetadata(m.content)}</ReactMarkdown>
                   </div>
                   {m.kind === "order_card" && order && (() => {
-                    const meta = parseOrderMetadata(order.comment);
-                    const sectors = meta.completed_sectors || {};
-                    const thisSectorDone = sectors[chatId] === true;
-                    const assignedChats = Array.from(new Set([...(order.dispatched_chat_ids || []), order.chat_id].filter((id): id is string => typeof id === "string" && id.length > 0)));
-                    const isAssigned = Boolean(order.responsible_user_id);
+                    // Per-chat assignment status (not global order status)
+                    const isAssignedInThisChat = Boolean(order.responsible_user_id);
                     const workerName = order.responsible_user_id ? (profiles[order.responsible_user_id] ?? "Сотрудник") : "";
-                    
+                    const isCompleted = order.status === "completed";
+
                     return (
                       <div className="mt-3 flex flex-col gap-2">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge variant="outline" className={STATUS_COLOR[order.status]}>{STATUS_LABEL[order.status]}</Badge>
-                          
-                          {!isAssigned && order.status !== "completed" && (
-                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onClaim(m.order_id!)}>
+                          {/* Show per-chat assignment status */}
+                          {isCompleted ? (
+                            <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 font-bold">
+                              ✅ Завершено
+                            </Badge>
+                          ) : isAssignedInThisChat ? (
+                            <>
+                              <Badge variant="outline" className="text-blue-700 border-blue-300 bg-blue-50 font-bold">
+                                🔵 В работе: {workerName}
+                              </Badge>
+                              {order.responsible_user_id === user?.id && (
+                                <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-300 hover:bg-emerald-50" onClick={() => onToggleSector(m.order_id!, true)}>
+                                  <CheckCircle2 className="size-4 mr-1" />Завершить
+                                </Button>
+                              )}
+                            </>
+                          ) : (
+                            <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold" onClick={() => onClaim(m.order_id!)}>
                               <Check className="size-4 mr-1" />Взять в работу
                             </Button>
                           )}
-
-                          {isAssigned && (
-                            <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50">
-                              В работе: {workerName}
-                            </Badge>
-                          )}
-
-                          {order.responsible_user_id === user?.id && order.status !== "completed" && !thisSectorDone && (
-                            <Button size="sm" variant="secondary" onClick={() => onToggleSector(m.order_id!, true)}>
-                              <CheckCircle2 className="size-4 mr-1" />Сектор завершил работу
-                            </Button>
-                          )}
-                          {order.responsible_user_id === user?.id && thisSectorDone && order.status !== "completed" && (
-                            <Button size="sm" variant="outline" onClick={() => onToggleSector(m.order_id!, false)}>
-                              <X className="size-4 mr-1" />Отменить завершение сектора
-                            </Button>
-                          )}
                         </div>
-                        {assignedChats.length > 0 && (
-                          <div className="w-full mt-1.5 flex flex-wrap gap-1.5 p-2 bg-muted/20 rounded-md border border-border/30">
-                            <div className="w-full text-[10px] text-muted-foreground font-semibold mb-0.5">ПРОГРЕСС ПО СЕКТОРАМ:</div>
-                            {assignedChats.map(cid => (
-                              <Badge key={cid} variant={sectors[cid] ? "default" : "outline"} className={`text-[10px] ${sectors[cid] ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "text-muted-foreground"}`}>
-                                {chatNames[cid] || "Сектор"} {sectors[cid] ? "✅" : "⏳"}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     );
                   })()}
@@ -239,7 +251,7 @@ function ChatPage() {
         </div>
         <form onSubmit={onSend} className="border-t border-slate-200 bg-white p-3 sm:p-4 flex items-center gap-3">
           <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Сообщение или команда..." autoFocus className="h-12 sm:h-14 text-base rounded-2xl border-slate-200 bg-slate-50 focus-visible:ring-1 focus-visible:ring-blue-500 shadow-inner" />
-          
+
           {text.trim() ? (
             <Button type="submit" disabled={sending} className="h-12 sm:h-14 w-12 sm:w-14 shrink-0 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all">
               <Send className="size-5 sm:size-6 ml-1" />

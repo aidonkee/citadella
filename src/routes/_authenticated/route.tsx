@@ -41,7 +41,7 @@ function AuthedShell() {
       items: [
         ...(isManager ? [{ to: "/manager/new", icon: Plus, label: "Новый заказ" }] : []),
         ...(isOwner ? [{ to: "/dashboard", icon: LayoutDashboard, label: "Дашборд" }] : []),
-        ...(isOwner ? [{ to: "/admin/inbox", icon: Inbox, label: "Входящие" }] : []),
+        ...(isOwner || isManager ? [{ to: "/admin/inbox", icon: Inbox, label: "Входящие" }] : []),
       ]
     },
     {
