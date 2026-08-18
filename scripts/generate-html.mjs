@@ -1,4 +1,4 @@
-import { readdirSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, readdirSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 
 const staticDir = join(process.cwd(), ".vercel/output/static");
@@ -11,10 +11,25 @@ if (!existsSync(assetsDir)) {
 
 const files = readdirSync(assetsDir);
 const cssFile = files.find((f) => f.startsWith("styles") && f.endsWith(".css")) || files.find((f) => f.endsWith(".css"));
-const mainJsFile = files.find((f) => f.startsWith("index-") && f.endsWith(".js") && !f.includes("DtqBFgK5") && !f.includes("tTIq2VVr") && !f.includes("U2dGyGLz")) || files.find((f) => f.startsWith("index-") && f.endsWith(".js"));
+
+const clientEntryMarker = "TSS_CLIENT_ENTRY";
+const entryJsFile = files.find((f) => f.endsWith(".js") && readFileSync(join(assetsDir, f), "utf8").includes(clientEntryMarker));
+const mainJsFile = entryJsFile || files.find((f) => f.startsWith("index-") && f.endsWith(".js") && !f.includes("DtqBFgK5") && !f.includes("tTIq2VVr") && !f.includes("U2dGyGLz")) || files.find((f) => f.startsWith("index-") && f.endsWith(".js"));
 
 const cssTag = cssFile ? `<link rel="stylesheet" href="/assets/${cssFile}">` : "";
 const jsTag = mainJsFile ? `<script type="module" src="/assets/${mainJsFile}"></script>` : "";
+
+// TanStack Start client entry (hydrateRouter) требует SSR-бутстрап window.$_TSR.
+// На статик-хостинге без Nitro-сервера внедряем минимальный бутстрап:
+// пустой буфер + "dehydrated" роутер без матчей — клиент доходит до полной SPA-загрузки.
+const tsrBootstrap = `<script>
+window.$_TSR = {
+  buffer: [],
+  initialized: false,
+  router: { manifest: { routes: {} }, matches: [], lastMatchId: undefined, dehydratedData: undefined },
+  h: function () {}
+};
+</script>`;
 
 const html = `<!DOCTYPE html>
 <html lang="ru">
@@ -26,6 +41,7 @@ const html = `<!DOCTYPE html>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
     ${cssTag}
+    ${tsrBootstrap}
   </head>
   <body>
     <div id="root"></div>
