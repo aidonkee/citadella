@@ -1,8 +1,5 @@
 {
   "outputDirectory": ".vercel/output/static",
-  "crons": [
-    { "path": "/api/public/cron/followups", "schedule": "*/15 * * * *" }
-  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
