@@ -59,11 +59,32 @@ function AuditPage() {
   if (!isOwner) return <div className="p-6 text-muted-foreground">Доступно только владельцу предприятия.</div>;
 
   return (
-    <div className="soft-scrollbar h-full overflow-y-auto p-4 sm:p-6">
-      <div className="max-w-5xl mx-auto">
-        <h1 className="text-2xl font-semibold mb-1">Журнал аудита</h1>
-        <p className="text-sm text-muted-foreground mb-5">Все действия владельца, сотрудников и ИИ-ассистента.</p>
-        <div className="glass-panel soft-scrollbar rounded-2xl border border-border/40 overflow-x-auto">
+    <div className="soft-scrollbar h-full overflow-y-auto bg-background p-4 sm:p-6 pb-24 md:pb-6">
+      <div className="max-w-5xl mx-auto space-y-4">
+        <div>
+          <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-foreground">Журнал аудита</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Все действия владельца, сотрудников и ИИ-ассистента.</p>
+        </div>
+
+        {/* Mobile cards */}
+        <div className="md:hidden space-y-3">
+          {rows.map((r) => (
+            <div key={r.id} className="rounded-xl border border-border bg-card shadow-sm p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-muted-foreground">{new Date(r.created_at).toLocaleString("ru")}</span>
+                <span className="text-xs font-semibold text-foreground truncate">{r.actor_user_id ? (names[r.actor_user_id] ?? "—") : "ИИ"}</span>
+              </div>
+              <div className="text-sm font-medium text-foreground">{ACTION_LABEL[r.action] ?? r.action}</div>
+              <div className="text-xs text-muted-foreground break-all"><code>{JSON.stringify(r.details)}</code></div>
+            </div>
+          ))}
+          {rows.length === 0 && (
+            <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">Событий пока нет</div>
+          )}
+        </div>
+
+        {/* Desktop table */}
+        <div className="hidden md:block rounded-xl border border-border bg-card shadow-sm overflow-x-auto soft-scrollbar">
           <table className="w-full text-sm">
             <thead className="bg-muted/30 text-xs uppercase text-muted-foreground">
               <tr>
@@ -75,7 +96,7 @@ function AuditPage() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-t border-border/40 align-top transition hover:bg-muted/25">
+                <tr key={r.id} className="border-t border-border align-top transition hover:bg-muted/25">
                   <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru")}</td>
                   <td className="px-3 py-2">{r.actor_user_id ? (names[r.actor_user_id] ?? "—") : <span className="text-primary">ИИ</span>}</td>
                   <td className="px-3 py-2">{ACTION_LABEL[r.action] ?? r.action}</td>

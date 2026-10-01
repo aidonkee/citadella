@@ -22,10 +22,10 @@ export const Route = createFileRoute("/_authenticated/dm")({
 type Msg = { id: string; content: string; is_ai: boolean; sender_user_id: string | null; created_at: string };
 
 const QUICK_CHIPS = [
-  "📦 Какие заказы сейчас в работе?",
-  "⏱ Когда срок сдачи ближайших заказов?",
-  "📋 Как обновить статус заказа?",
-  "🛠 Как оформить задержку или брак?",
+  "Какие заказы сейчас в работе?",
+  "Когда срок сдачи ближайших заказов?",
+  "Как обновить статус заказа?",
+  "Как оформить задержку или брак?",
 ];
 
 function DM() {
@@ -45,7 +45,7 @@ function DM() {
       .on("postgres_changes", { event: "*", schema: "public", table: "order_assignments", filter: `responsible_user_id=eq.${user.id}` }, fetchActiveOrder)
       .subscribe();
 
-    const fetchActiveOrder = async () => {
+    async function fetchActiveOrder() {
       const { data: assigns, error: assignErr } = await supabase
         .from("order_assignments")
         .select("order_id")
@@ -77,7 +77,7 @@ function DM() {
       } else if (!disposed) {
         setActiveOrder(null);
       }
-    };
+    }
 
     const init = async () => {
       const { data: dm } = await supabase.from("chats").select("id").eq("is_dm", true).eq("dm_user_id", user.id).maybeSingle();
@@ -203,20 +203,20 @@ function DM() {
         }[st] ?? "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20";
         const stLabel = { in_progress: "В работе", stalled: "Завис", blocked: "Заблокирован" }[st] ?? "В работе";
         return (
-          <div className="bg-primary/10 border-b border-primary/20 px-4 py-2.5 flex items-center justify-between relative z-10 shadow-sm">
-            <div className="flex flex-col">
-              <span className="text-[10px] uppercase font-bold text-primary tracking-wider">Текущая задача</span>
-              <span className="text-sm font-semibold text-foreground">
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between relative z-10">
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">Текущая задача</span>
+              <span className="text-sm font-medium text-foreground truncate">
                 {activeOrder.nomenclature} <span className="text-muted-foreground">#{activeOrder.number}</span>
               </span>
             </div>
-            <div className={`text-xs font-medium px-2 py-0.5 rounded-full border ${stColor}`}>{stLabel}</div>
+            <div className={`text-xs font-medium px-2.5 py-1 rounded-full border shrink-0 ml-3 ${stColor}`}>{stLabel}</div>
           </div>
         );
       })()}
 
-      {/* 3D Сфера */}
-      <div className="flex flex-col items-center justify-center py-6 bg-card/40 border-b border-border/40 backdrop-blur-md">
+      {/* Микрофон */}
+      <div className="flex flex-col items-center justify-center py-5 bg-muted/40 border-b border-border">
         <GeminiVoiceOrb
           isRecording={isRecordingOrb}
           isProcessing={sending}
@@ -224,8 +224,8 @@ function DM() {
           onPressEnd={handleOrbEnd}
           disabled={sending}
         />
-        <div className="text-sm font-medium text-muted-foreground mt-4 animate-pulse">
-          {isRecordingOrb ? "Слушаю вас..." : sending ? "Обработка..." : "Зажмите сферу, чтобы говорить"}
+        <div className="text-[13px] font-medium text-muted-foreground mt-3">
+          {isRecordingOrb ? "Слушаю вас..." : sending ? "Обработка..." : "Зажмите кнопку, чтобы говорить"}
         </div>
       </div>
 

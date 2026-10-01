@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { sendMessage, claimOrder, updateOrderStatus, confirmClaim, rejectClaim } from "@/lib/orders.functions";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
-import { Bot, Send, CheckCircle2, X, Check, MessageSquare, BrainCircuit, Activity, Layers } from "lucide-react";
+import { Bot, Send, CheckCircle2, X, Check, MessageSquare, BrainCircuit, Activity, Layers, AlertTriangle, CircleDot, CircleDashed } from "lucide-react";
 import { STATUS_COLOR, STATUS_LABEL, type OrderStatus } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -178,34 +178,31 @@ function ChatPage() {
   };
 
   return (
-    <div className="flex h-[100dvh] min-w-0 overflow-hidden">
+    <div className="flex h-full min-w-0 overflow-hidden">
       <div className="hidden md:block"><ChatsSidebar activeId={chatId} /></div>
-      <div className="flex-1 flex flex-col min-w-0 p-2 sm:p-4 bg-slate-100/40">
-        <Card className="flex-1 flex flex-col overflow-hidden border-slate-200/80 shadow-md bg-white">
-          <CardHeader className="py-3 sm:py-4 px-4 border-b border-slate-100 bg-slate-50/50 flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
+      <div className="flex-1 flex flex-col min-w-0 bg-background">
+        <Card className="flex-1 flex flex-col overflow-hidden rounded-none md:rounded-xl border-0 md:border bg-card">
+          <CardHeader className="py-3 sm:py-4 px-4 border-b border-border bg-card flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
               <Sheet>
                 <SheetTrigger asChild>
                   <Button variant="ghost" size="icon" className="md:hidden"><MessageSquare className="size-5" /></Button>
                 </SheetTrigger>
                 <SheetContent side="left" className="p-0 w-72"><ChatsSidebar activeId={chatId} /></SheetContent>
               </Sheet>
-              <CardTitle className="text-base sm:text-lg font-bold text-slate-800 tracking-tight">{chatName || "Чат"}</CardTitle>
+              <CardTitle className="text-base sm:text-lg font-semibold text-foreground tracking-tight truncate">{chatName || "Чат"}</CardTitle>
             </div>
-            <Link to="/dashboard" className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
-              <Activity className="size-3.5" /> Дашборд
-            </Link>
           </CardHeader>
 
         {Object.keys(orders).length > 0 && (
-          <div className="px-4 py-2 bg-slate-100/70 border-b border-slate-200/60 flex flex-wrap gap-2 text-xs">
-            <span className="font-semibold text-slate-500 flex items-center gap-1"><Layers className="size-3" /> Заказы в чате:</span>
+          <div className="px-4 py-2 bg-muted/40 border-b border-border flex flex-wrap gap-2 text-xs">
+            <span className="font-medium text-muted-foreground flex items-center gap-1"><Layers className="size-3.5" /> Заказы в чате:</span>
             {Object.values(orders).map(o => {
               const meta = parseOrderMetadata(o.comment);
               return (
-                <div key={o.id} className="flex items-center gap-1.5 bg-white px-2 py-1 rounded border border-slate-200 shadow-2xs">
-                  <span className="font-bold text-slate-800">#{o.number}</span>
-                  <Badge variant="outline" className={`text-[10px] px-1 py-0 ${STATUS_COLOR[o.status]}`}>{STATUS_LABEL[o.status]}</Badge>
+                <div key={o.id} className="flex items-center gap-1.5 bg-card px-2 py-1 rounded-lg border border-border">
+                  <span className="font-semibold text-foreground">#{o.number}</span>
+                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${STATUS_COLOR[o.status]}`}>{STATUS_LABEL[o.status]}</Badge>
                 </div>
               );
             })}
@@ -217,12 +214,12 @@ function ChatPage() {
             const order = m.order_id ? orders[m.order_id] : null;
             const mine = m.sender_user_id === user?.id;
             return (
-              <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
-                <div className={`max-w-[88%] sm:max-w-[70%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 shadow-sm transition-all ${
-                  m.is_ai ? "border border-slate-200 bg-slate-50 text-slate-900 rounded-bl-sm" :
-                  mine ? "bg-slate-900 text-white font-medium rounded-br-sm" : "border border-slate-200 bg-white text-slate-900 rounded-bl-sm"
+              <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[88%] sm:max-w-[70%] rounded-2xl px-3.5 sm:px-4 py-2.5 sm:py-3 shadow-sm border ${
+                  m.is_ai ? "border-border bg-muted/50 text-foreground rounded-bl-sm" :
+                  mine ? "border-primary bg-primary text-primary-foreground font-medium rounded-br-sm" : "border-border bg-card text-foreground rounded-bl-sm"
                 }`}>
-                  <div className={`flex items-center gap-1.5 text-[11px] font-bold tracking-wide mb-1 ${m.is_ai ? "text-blue-600" : mine ? "text-slate-300" : "text-slate-500"}`}>
+                  <div className={`flex items-center gap-1.5 text-[11px] font-semibold tracking-wide mb-1 ${m.is_ai ? "text-primary" : mine ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
                     {m.is_ai ? <><BrainCircuit className="size-3.5" />Nerva AI</> : <span>{m.sender_user_id ? profiles[m.sender_user_id] ?? "…" : "—"}</span>}
                     <span className="opacity-60 font-normal">· {new Date(m.created_at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</span>
                   </div>
@@ -242,19 +239,19 @@ function ChatPage() {
                       <div className="mt-3 flex flex-col gap-2">
                         {meta.priority && meta.priority !== "Обычный" && (
                           <div>
-                            <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 font-bold">
-                              🔥 Приоритет: {meta.priority}
+                            <Badge variant="outline" className="text-amber-700 border-amber-200 bg-amber-50 font-semibold">
+                              Приоритет: {meta.priority}
                             </Badge>
                           </div>
                         )}
                         <div className="flex items-center gap-2 flex-wrap">
                           {isCompleted ? (
                             <>
-                              <Badge variant="outline" className="text-emerald-700 border-emerald-300 bg-emerald-50 font-bold">
-                                ✅ Завершено{workerName ? `: ${workerName}` : ""}
+                              <Badge variant="outline" className="text-emerald-700 border-emerald-200 bg-emerald-50 font-semibold">
+                                <CheckCircle2 className="size-3 mr-1 inline" /> Завершено{workerName ? `: ${workerName}` : ""}
                               </Badge>
                               {canComplete && (
-                                <Button size="sm" variant="outline" className="text-slate-600 border-slate-300 hover:bg-slate-50" onClick={() => onToggleSector(m.order_id!, false)}>
+                                <Button size="sm" variant="outline" className="text-muted-foreground border-border hover:bg-muted" onClick={() => onToggleSector(m.order_id!, false)}>
                                   Вернуть в работу
                                 </Button>
                               )}
@@ -262,18 +259,20 @@ function ChatPage() {
                           ) : isAssignedInThisChat ? (
                             <>
                               <Badge variant="outline" className={isProblem
-                                ? "text-red-700 border-red-300 bg-red-50 font-bold"
-                                : "text-blue-700 border-blue-300 bg-blue-50 font-bold"}>
-                                {isProblem ? `⚠️ ${order.status === "blocked" ? "Заблокирован" : "Проблема"}` : "🔵 В работе"}: {workerName}
+                                ? "text-red-700 border-red-200 bg-red-50 font-semibold"
+                                : "text-blue-700 border-blue-200 bg-blue-50 font-semibold"}>
+                                <AlertTriangle className={`size-3 mr-1 inline ${isProblem ? "" : "hidden"}`} />
+                                <CircleDot className={`size-3 mr-1 inline ${isProblem ? "hidden" : ""}`} />
+                                {isProblem ? (order.status === "blocked" ? "Заблокирован" : "Проблема") : "В работе"}: {workerName}
                               </Badge>
                               {canComplete && (
                                 <>
-                                  <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-300 hover:bg-emerald-50" onClick={() => onToggleSector(m.order_id!, true)}>
+                                  <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => onToggleSector(m.order_id!, true)}>
                                     <CheckCircle2 className="size-4 mr-1" />Завершить
                                   </Button>
                                   {!isProblem && (
                                     <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={() => onMarkProblem(m.order_id!)}>
-                                      ⚠️ Проблема
+                                      <AlertTriangle className="size-4 mr-1" /> Проблема
                                     </Button>
                                   )}
                                 </>
@@ -281,10 +280,10 @@ function ChatPage() {
                             </>
                           ) : (
                             <>
-                              <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50 font-bold">
-                                🟡 Ожидает принятия
+                              <Badge variant="outline" className="text-amber-700 border-amber-200 bg-amber-50 font-semibold">
+                                <CircleDashed className="size-3 mr-1 inline" /> Ожидает принятия
                               </Badge>
-                              <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white font-bold" onClick={() => onClaim(m.order_id!)}>
+                              <Button size="sm" className="font-medium" onClick={() => onClaim(m.order_id!)}>
                                 <Check className="size-4 mr-1" />Взять в работу
                               </Button>
                             </>
@@ -297,14 +296,14 @@ function ChatPage() {
               </div>
             );
           })}
-          {messages.length === 0 && <div className="text-center text-muted-foreground py-12">Сообщений пока нет</div>}
+          {messages.length === 0 && <div className="text-center text-muted-foreground py-12 text-sm">Сообщений пока нет</div>}
         </div>
-        <form onSubmit={onSend} className="border-t border-slate-200 bg-white p-3 sm:p-4 flex items-center gap-3">
-          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Сообщение или команда..." autoFocus className="h-12 sm:h-14 text-base rounded-2xl border-slate-200 bg-slate-50 focus-visible:ring-1 focus-visible:ring-blue-500 shadow-inner" />
+        <form onSubmit={onSend} className="border-t border-border bg-card p-3 sm:p-4 flex items-center gap-2.5">
+          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Сообщение или команда..." className="h-12 sm:h-14 text-base rounded-xl border-border bg-background focus-visible:ring-ring" />
 
           {text.trim() ? (
-            <Button type="submit" disabled={sending} className="h-12 sm:h-14 w-12 sm:w-14 shrink-0 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all">
-              <Send className="size-5 sm:size-6 ml-1" />
+            <Button type="submit" disabled={sending} className="h-12 sm:h-14 w-12 sm:w-14 shrink-0 rounded-xl shadow-md transition-all">
+              <Send className="size-5 sm:size-6" />
             </Button>
           ) : (
             <div className="shrink-0">
@@ -330,12 +329,12 @@ export function ChatsSidebar({ activeId }: { activeId?: string }) {
     return () => { supabase.removeChannel(ch); };
   }, []);
   return (
-    <aside className="w-72 md:w-64 h-full border-r border-slate-200 bg-slate-50 overflow-y-auto">
-      <div className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Чаты</div>
-      <div className="space-y-0.5 px-2">
+    <aside className="w-full md:w-64 h-full border-r border-border bg-card overflow-y-auto soft-scrollbar">
+      <div className="px-4 py-3.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Чаты</div>
+      <div className="space-y-0.5 px-2 pb-3">
         {chats.map((c) => (
           <Link key={c.id} to="/chats/$chatId" params={{ chatId: c.id }}
-            className={`block px-3 py-2 rounded-xl text-sm truncate transition ${activeId === c.id ? "bg-blue-100 text-blue-900 font-medium" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`}>
+            className={`block px-3 py-2.5 rounded-lg text-sm truncate transition ${activeId === c.id ? "bg-emerald-50 text-emerald-800 font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>
             {c.name}
           </Link>
         ))}

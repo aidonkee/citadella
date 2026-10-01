@@ -101,68 +101,68 @@ function InboxPage() {
     });
   };
 
-  if (loading) return <div className="p-8 text-slate-500 animate-pulse">Загрузка входящих заказов…</div>;
-  if (!canAccess) return <div className="p-8 text-slate-500">Доступ только для владельца и администрации.</div>;
+  if (loading) return <div className="p-8 text-muted-foreground animate-pulse">Загрузка входящих заказов…</div>;
+  if (!canAccess) return <div className="p-8 text-muted-foreground">Доступ только для владельца и администрации.</div>;
 
   return (
-    <div className="soft-scrollbar h-full overflow-auto p-4 sm:p-6 space-y-6">
+    <div className="soft-scrollbar h-full overflow-y-auto bg-background p-4 sm:p-6 space-y-4 sm:space-y-5 pb-24 md:pb-6">
       <div>
-        <h1 className="text-2xl font-semibold flex items-center gap-2"><Inbox className="size-6" />Входящие заказы</h1>
+        <h1 className="text-lg sm:text-xl font-semibold flex items-center gap-2"><Inbox className="size-6" />Входящие заказы</h1>
         <p className="text-sm text-muted-foreground">Заказы от менеджеров, ожидающие распределения по чатам</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="border border-slate-200 bg-white shadow-sm rounded-xl overflow-hidden">
-          <CardHeader className="border-b border-slate-100 bg-slate-50/50 px-5 py-3.5">
-            <CardTitle className="text-base font-bold text-slate-900 tracking-tight">Очередь ({orders.length})</CardTitle>
+        <Card className="border border-border bg-card shadow-sm rounded-xl overflow-hidden">
+          <CardHeader className="border-b border-border bg-muted/40 px-4 py-3.5">
+            <CardTitle className="text-base font-semibold text-foreground tracking-tight">Очередь ({orders.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 p-4">
             {orders.map((o) => (
               <button key={o.id} onClick={() => { setSelectedOrder(o.id); setSelectedChats(new Set()); }}
-                className={`w-full text-left border rounded-xl px-4 py-3 transition ${selectedOrder === o.id ? "border-slate-900 bg-slate-900 text-white shadow-sm" : "border-slate-200 bg-white text-slate-900 hover:bg-slate-50"}`}>
+                className={`w-full text-left border rounded-xl px-4 py-3 transition ${selectedOrder === o.id ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-card text-foreground hover:bg-muted"}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="font-mono text-sm font-bold tracking-tight">#{o.number}</div>
-                  <div className={`text-xs ${selectedOrder === o.id ? "text-slate-300" : "text-slate-500"}`}>{new Date(o.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
+                  <div className={`text-xs ${selectedOrder === o.id ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{new Date(o.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
                 </div>
-                <div className={`text-sm mt-1 line-clamp-2 font-medium ${selectedOrder === o.id ? "text-white" : "text-slate-800"}`}>{o.nomenclature}</div>
-                <div className={`text-xs mt-1 font-medium ${selectedOrder === o.id ? "text-slate-300" : "text-slate-500"}`}>
+                <div className={`text-sm mt-1 line-clamp-2 font-medium break-words ${selectedOrder === o.id ? "text-primary-foreground" : "text-foreground"}`}>{o.nomenclature}</div>
+                <div className={`text-xs mt-1 font-medium break-words ${selectedOrder === o.id ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
                   от {o.created_by ? (creatorNames[o.created_by] ?? "…") : "—"}
                   {o.finish_date ? ` · срок ${o.finish_date}` : ""}
                 </div>
               </button>
             ))}
-            {orders.length === 0 && <div className="text-sm text-slate-500 text-center py-8">🎉 Все заказы распределены</div>}
+            {orders.length === 0 && <div className="text-sm text-muted-foreground text-center py-8">Все заказы распределены</div>}
           </CardContent>
         </Card>
 
-        <Card className="border border-slate-200 bg-white shadow-sm rounded-xl overflow-hidden">
-          <CardHeader className="border-b border-slate-100 bg-slate-50/50 px-5 py-3.5">
-            <CardTitle className="text-base font-bold text-slate-900 tracking-tight">Распределение по цехам</CardTitle>
+        <Card className="border border-border bg-card shadow-sm rounded-xl overflow-hidden">
+          <CardHeader className="border-b border-border bg-muted/40 px-4 py-3.5">
+            <CardTitle className="text-base font-semibold text-foreground tracking-tight">Распределение по цехам</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 p-4">
-            {!active && <div className="text-sm text-slate-500 text-center py-8">Выберите заказ слева</div>}
+            {!active && <div className="text-sm text-muted-foreground text-center py-8">Выберите заказ слева</div>}
             {active && (
               <>
-                <div className="border border-slate-200 rounded-xl p-3.5 bg-slate-50 text-slate-900 space-y-1">
-                  <div className="font-mono text-base font-bold text-slate-900">#{active.number}</div>
-                  <div className="text-sm font-medium text-slate-800">{active.nomenclature}</div>
-                  {active.customer_order && <div className="text-xs text-slate-600">📑 {active.customer_order}</div>}
-                  {parseOrderMetadata(active.comment).comment && <div className="text-xs text-slate-600">💬 {parseOrderMetadata(active.comment).comment}</div>}
+                <div className="border border-border rounded-xl p-3.5 bg-muted text-foreground space-y-1">
+                  <div className="font-mono text-base font-bold text-foreground">#{active.number}</div>
+                  <div className="text-sm font-medium text-foreground break-words">{active.nomenclature}</div>
+                  {active.customer_order && <div className="text-xs text-muted-foreground break-words">Заказ клиента: {active.customer_order}</div>}
+                  {parseOrderMetadata(active.comment).comment && <div className="text-xs text-muted-foreground break-words">Комментарий: {parseOrderMetadata(active.comment).comment}</div>}
                 </div>
 
                 <VoiceButton onText={onVoiceMatch} />
 
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {chats.map((c) => (
-                    <label key={c.id} className={`flex items-center gap-3 border rounded-xl px-3.5 py-2.5 cursor-pointer transition ${selectedChats.has(c.id) ? "border-emerald-600 bg-emerald-50 text-emerald-900 font-bold" : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"}`}>
+                    <label key={c.id} className={`flex items-center gap-3 border rounded-xl px-3.5 py-2.5 cursor-pointer transition ${selectedChats.has(c.id) ? "border-emerald-600 bg-emerald-50 text-emerald-900 font-bold" : "border-border bg-card text-foreground hover:bg-muted"}`}>
                       <Checkbox checked={selectedChats.has(c.id)} onCheckedChange={() => toggle(c.id)} />
-                      <div className="text-sm font-medium">{c.name}</div>
+                      <div className="text-sm font-medium min-w-0 truncate">{c.name}</div>
                     </label>
                   ))}
-                  {chats.length === 0 && <div className="text-sm text-slate-500 text-center py-4">Нет чатов. {isOwner ? <Link to="/admin/users" className="text-blue-600 underline">Создать</Link> : "Обратитесь к владельцу"}</div>}
+                  {chats.length === 0 && <div className="text-sm text-muted-foreground text-center py-4">Нет чатов. {isOwner ? <Link to="/admin/users" className="text-primary underline">Создать</Link> : "Обратитесь к владельцу"}</div>}
                 </div>
 
-                <Button onClick={send} disabled={dispatching || selectedChats.size === 0} className="w-full h-11 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg shadow-sm">
+                <Button onClick={send} disabled={dispatching || selectedChats.size === 0} className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg shadow-sm">
                   {dispatching ? <><Loader2 className="size-4 mr-2 animate-spin" />Отправка…</> : <><Send className="size-4 mr-2" />Отправить в {selectedChats.size} чат(а)</>}
                 </Button>
               </>

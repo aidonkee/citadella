@@ -3,18 +3,17 @@ import { useState, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { BrainCircuit, LogOut, Lock, UserRound, Send, Sparkles, MessageSquare, Radio } from "lucide-react";
+import { BrainCircuit, LogOut, Lock, UserRound, Send, Loader2, Radio } from "lucide-react";
 import { toast } from "sonner";
 import { askNervaDirect } from "@/lib/orders.functions";
 import { transcribeAudio } from "@/lib/stt.functions";
 import { blobToBase64 } from "@/components/voice-mic-button";
-import { NervaNeuralBg } from "@/components/NervaNeuralBg";
 import { GeminiVoiceOrb } from "@/components/GeminiVoiceOrb";
 
-const LOGIN_DOMAIN = "orderflow.local";
+const LOGIN_DOMAIN = "nerva.ai";
 
 export const Route = createFileRoute("/mobile-voice")({
-  head: () => ({ meta: [{ title: "Nerva APK Voice Agent — 3D Globe & Chat" }] }),
+  head: () => ({ meta: [{ title: "Nerva — Голосовой ассистент" }] }),
   component: MobileVoiceAgent,
 });
 
@@ -29,7 +28,7 @@ export function MobileVoiceAgent() {
   const [user, setUser] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(true);
 
-  // Форма входа в APK
+  // Форма входа
   const [loginInput, setLoginInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
@@ -187,7 +186,7 @@ export function MobileVoiceAgent() {
 
         setIsRecording(false);
         setIsProcessing(true);
-        setTranscript("Распознавание речи Nerva ИИ...");
+        setTranscript("Распознавание речи...");
 
         try {
           const b64 = await blobToBase64(blob);
@@ -258,7 +257,7 @@ export function MobileVoiceAgent() {
 
       setTranscript("");
     } catch (err: any) {
-      const errText = `[NERVA // ERROR]: ${err.message || "Сбой связи с сервером Nerva AI"}`;
+      const errText = `Ошибка связи с сервером: ${err.message || "сбой"}`;
       toast.error(errText);
       setMessages((prev) => [
         ...prev,
@@ -272,35 +271,32 @@ export function MobileVoiceAgent() {
 
   if (loadingSession) {
     return (
-      <div className="min-h-[100dvh] w-full bg-background flex items-center justify-center font-mono text-primary font-bold">
-        ИНИЦИАЛИЗАЦИЯ NERVA APK...
+      <div className="min-h-[100dvh] w-full bg-background flex items-center justify-center">
+        <Loader2 className="size-6 animate-spin text-primary" />
       </div>
     );
   }
 
-  // ЭКРАН ВХОДА ДЛЯ APK (если не авторизован)
+  // ЭКРАН ВХОДА
   if (!user) {
     return (
-      <div className="relative min-h-[100dvh] w-full bg-background text-foreground font-mono select-none overflow-hidden flex flex-col justify-center items-center p-6">
-        <NervaNeuralBg />
-        
-        <div className="relative z-10 w-full max-w-sm bg-card/90 p-6 backdrop-blur-md shadow-2xl rounded-none border border-primary/40">
-          <div className="flex items-center gap-2 pb-4 border-b border-primary/30 mb-5 text-primary font-black uppercase tracking-widest text-sm">
-            <span className="flex size-7 items-center justify-center bg-primary text-primary-foreground font-mono rounded-none">
-              <BrainCircuit className="size-4 animate-pulse" />
-            </span>
-            NERVA // ВХОД В APK
+      <div className="min-h-[100dvh] w-full bg-background flex flex-col justify-center items-center p-6">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center space-y-1.5">
+            <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+              <BrainCircuit className="size-6" />
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight">Nerva — голосовой ассистент</h1>
+            <p className="text-sm text-muted-foreground">Войдите, чтобы продолжить</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-1 text-left">
-              <label className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">
-                Логин или Email
-              </label>
+          <form onSubmit={handleLogin} className="space-y-4 bg-card border border-border rounded-2xl p-5 shadow-sm">
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Логин или Email</label>
               <div className="relative">
                 <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  className="pl-9 rounded-none border-primary/30 font-mono text-xs focus:border-primary"
+                  className="pl-9 h-11"
                   placeholder="admin"
                   required
                   value={loginInput}
@@ -309,14 +305,12 @@ export function MobileVoiceAgent() {
               </div>
             </div>
 
-            <div className="space-y-1 text-left">
-              <label className="text-[10px] uppercase text-muted-foreground font-bold tracking-wider">
-                Пароль
-              </label>
+            <div className="space-y-1.5">
+              <label className="text-[13px] font-medium text-foreground">Пароль</label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  className="pl-9 rounded-none border-primary/30 font-mono text-xs focus:border-primary"
+                  className="pl-9 h-11"
                   type="password"
                   placeholder="••••••••"
                   required
@@ -326,12 +320,8 @@ export function MobileVoiceAgent() {
               </div>
             </div>
 
-            <Button
-              type="submit"
-              disabled={loggingIn}
-              className="w-full rounded-none font-mono font-black uppercase tracking-widest text-xs h-10 bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg"
-            >
-              {loggingIn ? "АВТОРИЗАЦИЯ..." : "ВОЙТИ В СИСТЕМУ"}
+            <Button type="submit" disabled={loggingIn} className="w-full h-11">
+              {loggingIn ? "Вход..." : "Войти"}
             </Button>
           </form>
         </div>
@@ -339,48 +329,40 @@ export function MobileVoiceAgent() {
     );
   }
 
-  // ОСНОВНОЙ ЭКРАН APK С 3D ГЛОБУСОМ
+  // ОСНОВНОЙ ЭКРАН
   return (
-    <div className="relative min-h-[100dvh] w-full bg-background text-foreground font-sans select-none overflow-hidden flex flex-col p-4 sm:p-6">
-      <NervaNeuralBg />
-
-      {/* АНИМИРОВАННЫЙ ГРАДИЕНТНЫЙ ФОН ПРИ ГОВОРЕНИИ */}
-      <div
-        className={`absolute inset-0 pointer-events-none transition-all duration-300 z-0 bg-gradient-to-tr from-cyan-500 via-indigo-600 via-purple-600 to-pink-500 ${
-          isRecording ? "opacity-75 scale-105 animate-pulse" : "opacity-0 scale-100"
-        }`}
-        style={{
-          opacity: isRecording ? 0.45 + volume * 0.55 : 0,
-        }}
-      />
-
+    <div className="min-h-[100dvh] w-full bg-background text-foreground flex flex-col">
       {/* Верхняя панель */}
-      <div className="relative z-10 flex items-center justify-between pb-4 bg-transparent">
-        <div className="flex items-center gap-2 font-semibold text-lg text-primary">
-          <BrainCircuit className="size-5 text-indigo-500" />
-          Голосовой Ассистент
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
+        <div className="flex items-center gap-2.5">
+          <BrainCircuit className="size-5 text-primary" />
+          <span className="font-semibold text-[15px] tracking-tight">Голосовой ассистент</span>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
-            className="rounded-full text-sm font-medium h-9 px-4 hover:bg-destructive hover:text-destructive-foreground transition-colors"
-          >
-            <LogOut className="size-4 mr-2" /> Выход
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
+          className="h-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+        >
+          <LogOut className="size-4" /> Выход
+        </Button>
       </div>
 
-      {/* Центральная зона: 3D-сфера (Глобус) */}
-      <div className="relative z-10 flex flex-col items-center justify-center w-full max-w-md mx-auto flex-1 text-center mt-8">
+      {/* Центральная зона: микрофон */}
+      <div className="flex flex-col items-center justify-center py-10 px-4">
         {isRecording && (
-          <div className="text-xl sm:text-2xl font-medium text-indigo-500 animate-pulse mb-6">
+          <div className="text-base font-medium text-foreground mb-6">
             Слушаю...
+          </div>
+        )}
+        {isProcessing && (
+          <div className="text-base font-medium text-muted-foreground mb-6">
+            Обработка...
           </div>
         )}
 
         <GeminiVoiceOrb
+          size="lg"
           isRecording={isRecording}
           isProcessing={isProcessing}
           onPressStart={handlePressStart}
@@ -389,88 +371,85 @@ export function MobileVoiceAgent() {
           disabled={isProcessing}
         />
 
+        <div className="mt-4 text-sm text-muted-foreground">
+          {isRecording ? "Отпустите, чтобы отправить" : isProcessing ? "" : "Зажмите кнопку, чтобы говорить"}
+        </div>
+
         {transcript && isRecording && (
-          <div className="px-6 py-3 mt-8 bg-card/60 backdrop-blur-lg border border-border/50 text-foreground text-lg rounded-2xl font-medium shadow-sm animate-pulse max-w-sm w-full">
+          <div className="px-4 py-2.5 mt-6 bg-card border border-border text-foreground text-sm rounded-xl max-w-sm w-full text-center">
             {transcript}
           </div>
         )}
       </div>
 
-      {/* Простой и чистый список сообщений снизу */}
-      <div className="relative z-10 mt-6 flex flex-col w-full max-w-md mx-auto bg-card/50 backdrop-blur-xl border border-border/40 rounded-3xl shadow-lg overflow-hidden h-[45dvh]">
-        <div className="bg-muted/30 px-5 py-3 border-b border-border/50 flex items-center justify-between text-sm font-semibold text-muted-foreground">
+      {/* Лента сообщений */}
+      <div className="flex-1 flex flex-col w-full max-w-md mx-auto px-4 pb-4">
+        <div className="flex flex-col bg-card border border-border rounded-2xl shadow-sm overflow-hidden flex-1 min-h-[40dvh]">
+        <div className="bg-muted/60 px-4 py-2.5 border-b border-border flex items-center justify-between text-[13px] font-medium text-muted-foreground">
           <span className="flex items-center gap-2">
-            <Radio className="size-4 text-green-500 animate-pulse" /> Активные задачи
+            <Radio className="size-4 text-emerald-600" /> Переписка с ассистентом
           </span>
         </div>
 
-        <div className="flex-1 p-3 space-y-3 overflow-y-auto soft-scrollbar max-h-[36vh] text-xs">
+        <div className="flex-1 p-3 space-y-3 overflow-y-auto soft-scrollbar max-h-[40dvh]">
           {messages.length === 0 && (
-            <div className="text-center text-muted-foreground/70 py-8 uppercase font-mono text-[11px]">
+            <div className="text-center text-muted-foreground py-8 text-sm leading-relaxed">
               История пуста. Говорите или пишите любые вопросы и поручения агенту в свободной форме.
             </div>
           )}
 
           {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex flex-col ${m.is_ai ? "items-start" : "items-end"} space-y-1`}
-            >
-              <div
-                className={`max-w-[88%] p-2.5 rounded-none border ${
-                  m.is_ai
-                    ? "bg-card border-primary/40 text-foreground shadow-md"
-                    : "bg-primary/15 border-primary text-primary font-semibold shadow-sm"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3 text-[9px] uppercase font-bold opacity-70 mb-1 border-b border-current/20 pb-0.5">
-                  <span>{m.is_ai ? "🧠 NERVA AI" : "👤 ВЫ"}</span>
-                  <span>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            <div key={m.id} className={`flex flex-col ${m.is_ai ? "items-start" : "items-end"}`}>
+              <div className={`max-w-[88%] p-3 rounded-xl border ${
+                m.is_ai
+                  ? "bg-card border-border text-foreground"
+                  : "bg-primary border-primary text-primary-foreground"
+              }`}>
+                <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${m.is_ai ? "text-primary" : "text-primary-foreground/80"}`}>
+                  {m.is_ai ? "Nerva AI" : "Вы"}
+                  <span className="opacity-60 font-normal ml-1.5">{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                 </div>
-                <div className="whitespace-pre-wrap leading-relaxed">{m.content}</div>
+                <div className="whitespace-pre-wrap leading-relaxed text-sm">{m.content}</div>
               </div>
             </div>
           ))}
 
           {isProcessing && (
-            <div className="flex items-center gap-2 p-2.5 bg-card border border-cyan-400/50 text-cyan-300 text-xs animate-pulse">
-              <Sparkles className="size-4 animate-spin text-cyan-400" />
-              <span>Nerva анализирует запрос и выполняет задачу...</span>
+            <div className="flex items-center gap-2 p-3 bg-muted/60 border border-border rounded-xl text-xs text-muted-foreground">
+              <Loader2 className="size-4 animate-spin text-primary" />
+              <span>Nerva анализирует запрос...</span>
             </div>
           )}
           <div ref={chatBottomRef} />
         </div>
 
-        {/* Форма текстового или клавиатурно-голосового ввода */}
+        {/* Форма ввода */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
             processCommand(manualInput);
           }}
-          className="p-2 bg-background/90 border-t border-border flex items-center gap-2"
+          className="p-2.5 bg-card border-t border-border flex items-center gap-2"
         >
           <Input
             value={manualInput}
             onChange={(e) => setManualInput(e.target.value)}
-            placeholder="Свободный запрос (вопрос, заказ, опрос)..."
+            placeholder="Вопрос, заказ, опрос..."
             disabled={isProcessing}
-            className="rounded-none h-9 text-xs font-mono bg-card border-border focus:border-primary text-foreground placeholder:text-muted-foreground flex-1"
+            className="h-11 text-sm bg-background border-border flex-1"
           />
           <Button
             type="submit"
             disabled={!manualInput.trim() || isProcessing}
-            size="sm"
-            className="rounded-none h-9 px-4 bg-primary hover:bg-primary/90 text-primary-foreground font-black uppercase text-xs"
+            size="icon"
+            className="h-11 w-11 shrink-0"
+            aria-label="Отправить"
           >
-            <Send className="size-4 mr-1" /> ОтправитЬ
+            <Send className="size-4" />
           </Button>
         </form>
       </div>
-
-      {/* Подвал */}
-      <div className="relative z-10 text-center text-[10px] text-muted-foreground/60 uppercase tracking-widest pb-1">
-        СЕКТОР: {user.email} // ЕДИНЫЙ АВТОНОМНЫЙ АГЕНТ
-      </div>
+    </div>
     </div>
   );
 }

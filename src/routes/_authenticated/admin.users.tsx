@@ -53,12 +53,10 @@ function UsersAdmin() {
   if (!isOwner) return <div className="p-8 text-muted-foreground">Доступно только владельцу предприятия.</div>;
 
   return (
-    <div className="soft-scrollbar h-full overflow-auto p-4 sm:p-6 space-y-6 bg-transparent relative overflow-x-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,color-mix(in_oklab,var(--primary)_20%,transparent),transparent_35rem),radial-gradient(circle_at_85%_85%,color-mix(in_oklab,var(--accent)_25%,transparent),transparent_35rem)]" />
-      
+    <div className="soft-scrollbar h-full overflow-y-auto bg-background p-4 sm:p-6 space-y-4 sm:space-y-5 pb-24 md:pb-6">
       <div>
-        <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground flex items-center gap-2.5">
-          <BrainCircuit className="size-6 text-primary animate-pulse" />
+        <h1 className="text-lg sm:text-xl font-semibold text-foreground flex items-center gap-2.5">
+          <BrainCircuit className="size-6 text-primary" />
           Сотрудники и цеха (Узлы Nerva)
         </h1>
         <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
@@ -66,46 +64,46 @@ function UsersAdmin() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Workers List */}
-        <Card className="glass-panel liquid-card rounded-2xl border border-primary/30 shadow-xl overflow-hidden">
-          <CardHeader className="border-b border-primary/15 bg-primary/5 px-5 py-4 flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+        <Card className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <CardHeader className="border-b border-border bg-muted/40 px-4 py-3.5 flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
               <UserCheck className="size-4 text-primary" />
               <span>Сотрудники ({workers.length})</span>
             </CardTitle>
             <Dialog open={openUser} onOpenChange={setOpenUser}>
               <DialogTrigger asChild>
-                <Button size="sm" className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md shadow-primary/20">
+                <Button className="h-11 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium shadow-sm">
                   <UserPlus className="size-4 mr-1.5" />Добавить
                 </Button>
               </DialogTrigger>
-              <DialogContent className="rounded-2xl border-primary/30 glass-panel">
-                <DialogHeader><DialogTitle className="font-bold text-foreground">Новый сотрудник</DialogTitle></DialogHeader>
+              <DialogContent className="inset-0 z-50 flex h-full w-full max-w-none flex-col gap-4 overflow-y-auto rounded-none bg-card p-4 border-border shadow-sm sm:inset-auto sm:left-1/2 sm:top-1/2 sm:h-auto sm:max-w-lg sm:w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-6">
+                <DialogHeader><DialogTitle className="font-semibold text-foreground">Новый сотрудник</DialogTitle></DialogHeader>
                 <WorkerForm onDone={() => { setOpenUser(false); load(); }} />
               </DialogContent>
             </Dialog>
           </CardHeader>
           <CardContent className="p-4 space-y-2.5">
             {workers.map((w) => (
-              <div key={w.id} className="flex items-center justify-between border border-primary/20 bg-background/50 hover:bg-primary/10 rounded-xl px-4 py-3 backdrop-blur-md transition-all">
-                <div>
-                  <div className="font-bold text-sm flex items-center gap-2 text-foreground">
-                    {w.display_name}
-                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
+              <div key={w.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-border bg-card hover:bg-muted/50 rounded-xl px-4 py-3 transition-colors">
+                <div className="min-w-0">
+                  <div className="font-semibold text-sm flex items-center gap-2 text-foreground flex-wrap">
+                    <span className="truncate">{w.display_name}</span>
+                    <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border shrink-0 ${
                       w.role === "manager"
-                        ? "bg-primary/20 text-primary border-primary/30"
-                        : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                        ? "bg-primary/10 text-primary border-primary/30"
+                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
                     }`}>
                       {w.role === "manager" ? "Менеджер" : "Работник"}
                     </span>
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5 font-mono">Логин: {w.username ?? "—"}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5 font-mono truncate">Логин: {w.username ?? "—"}</div>
                 </div>
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/15"
+                  className="size-10 sm:size-9 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0 self-end sm:self-auto"
                   onClick={async () => {
                     if (!confirm(`Удалить сотрудника ${w.display_name}?`)) return;
                     try {
@@ -122,49 +120,49 @@ function UsersAdmin() {
                 </Button>
               </div>
             ))}
-            {workers.length === 0 && <div className="text-sm text-muted-foreground py-8 text-center italic">Сотрудников пока нет</div>}
+            {workers.length === 0 && <div className="text-sm text-muted-foreground py-8 text-center">Сотрудников пока нет</div>}
           </CardContent>
         </Card>
 
         {/* Chats List */}
-        <Card className="glass-panel liquid-card rounded-2xl border border-primary/30 shadow-xl overflow-hidden">
-          <CardHeader className="border-b border-primary/15 bg-primary/5 px-5 py-4 flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+        <Card className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <CardHeader className="border-b border-border bg-muted/40 px-4 py-3.5 flex flex-row items-center justify-between gap-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2 text-foreground">
               <UsersIcon className="size-4 text-primary" />
               <span>Рабочие чаты и цеха ({chats.length})</span>
             </CardTitle>
             <Dialog open={openChat} onOpenChange={setOpenChat}>
               <DialogTrigger asChild>
-                <Button size="sm" className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md shadow-primary/20">
+                <Button className="h-11 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium shadow-sm">
                   <Plus className="size-4 mr-1.5" />Создать цех
                 </Button>
               </DialogTrigger>
-              <DialogContent className="rounded-2xl border-primary/30 glass-panel">
-                <DialogHeader><DialogTitle className="font-bold text-foreground">Новый рабочий чат / цех</DialogTitle></DialogHeader>
+              <DialogContent className="inset-0 z-50 flex h-full w-full max-w-none flex-col gap-4 overflow-y-auto rounded-none bg-card p-4 border-border shadow-sm sm:inset-auto sm:left-1/2 sm:top-1/2 sm:h-auto sm:max-w-lg sm:w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-6">
+                <DialogHeader><DialogTitle className="font-semibold text-foreground">Новый рабочий чат / цех</DialogTitle></DialogHeader>
                 <ChatForm onDone={() => { setOpenChat(false); load(); }} />
               </DialogContent>
             </Dialog>
           </CardHeader>
           <CardContent className="p-4 space-y-2.5">
             {chats.map((c) => (
-              <div key={c.id} className="flex items-center justify-between border border-primary/20 bg-background/50 hover:bg-primary/10 rounded-xl px-4 py-3 backdrop-blur-md transition-all">
-                <div>
-                  <div className="font-bold text-sm text-foreground">{c.name}</div>
-                  <div className="text-xs text-primary font-medium mt-0.5">{(members[c.id]?.length ?? 0)} сотрудников прикреплено</div>
+              <div key={c.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-border bg-card hover:bg-muted/50 rounded-xl px-4 py-3 transition-colors">
+                <div className="min-w-0">
+                  <div className="font-semibold text-sm text-foreground truncate">{c.name}</div>
+                  <div className="text-xs text-muted-foreground font-medium mt-0.5">{(members[c.id]?.length ?? 0)} сотрудников прикреплено</div>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => setEditChat(c)} className="rounded-xl border-primary/30 hover:bg-primary/15 text-foreground font-medium">
+                <Button size="sm" variant="outline" onClick={() => setEditChat(c)} className="h-11 sm:h-9 rounded-lg border-border hover:bg-muted text-foreground font-medium shrink-0">
                   <UsersIcon className="size-3.5 mr-1.5 text-primary" />Состав цеха
                 </Button>
               </div>
             ))}
-            {chats.length === 0 && <div className="text-sm text-muted-foreground py-8 text-center italic">Рабочих чатов пока нет</div>}
+            {chats.length === 0 && <div className="text-sm text-muted-foreground py-8 text-center">Рабочих чатов пока нет</div>}
           </CardContent>
         </Card>
       </div>
 
       <Dialog open={!!editChat} onOpenChange={(o) => !o && setEditChat(null)}>
-        <DialogContent className="rounded-2xl border-primary/30 glass-panel">
-          <DialogHeader><DialogTitle className="font-bold text-foreground">Участники цеха: {editChat?.name}</DialogTitle></DialogHeader>
+        <DialogContent className="inset-0 z-50 flex h-full w-full max-w-none flex-col gap-4 overflow-y-auto rounded-none bg-card p-4 border-border shadow-sm sm:inset-auto sm:left-1/2 sm:top-1/2 sm:h-auto sm:max-w-lg sm:w-full sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-6">
+          <DialogHeader><DialogTitle className="font-semibold text-foreground">Участники цеха: {editChat?.name}</DialogTitle></DialogHeader>
           {editChat && (
             <MembersForm chat={editChat} workers={workers} initial={members[editChat.id] ?? []}
               onDone={() => { setEditChat(null); load(); }} />
@@ -183,22 +181,22 @@ function WorkerForm({ onDone }: { onDone: () => void }) {
       e.preventDefault(); setSaving(true);
       try { await createWorker({ data: f as any }); toast.success(f.role === "manager" ? "Менеджер создан" : "Сотрудник создан"); onDone(); }
       catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
-    }} className="space-y-4">
-      <div className="space-y-1.5"><Label className="text-xs font-semibold">Имя сотрудника</Label><Input required value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} className="rounded-xl border-primary/30 bg-background/60" placeholder="Иван Петров" /></div>
-      <div className="space-y-1.5"><Label className="text-xs font-semibold">Логин для входа</Label><Input required value={f.login} onChange={(e) => setF({ ...f, login: e.target.value })} className="rounded-xl border-primary/30 bg-background/60" placeholder="ivan_ceh1" /></div>
-      <div className="space-y-1.5"><Label className="text-xs font-semibold">Пароль (минимум 6 символов)</Label><Input required type="text" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} minLength={6} className="rounded-xl border-primary/30 bg-background/60" /></div>
+    }}       className="space-y-4">
+      <div className="space-y-1.5"><Label className="text-sm font-medium">Имя сотрудника</Label><Input required value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} className="h-11 rounded-lg border-border" placeholder="Иван Петров" /></div>
+      <div className="space-y-1.5"><Label className="text-sm font-medium">Логин для входа</Label><Input required value={f.login} onChange={(e) => setF({ ...f, login: e.target.value })} className="h-11 rounded-lg border-border" placeholder="ivan_ceh1" /></div>
+      <div className="space-y-1.5"><Label className="text-sm font-medium">Пароль (минимум 6 символов)</Label><Input required type="text" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} minLength={6} className="h-11 rounded-lg border-border" /></div>
       <div className="space-y-1.5">
-        <Label className="text-xs font-semibold">Роль в системе Nerva</Label>
+        <Label className="text-sm font-medium">Роль в системе Nerva</Label>
         <div className="grid grid-cols-2 gap-2 mt-1">
           {(["worker", "manager"] as const).map((r) => (
             <button type="button" key={r} onClick={() => setF({ ...f, role: r })}
-              className={`px-3 py-2.5 rounded-xl border text-xs font-semibold transition ${f.role === r ? "border-primary bg-primary/20 text-primary shadow-sm" : "border-border/40 text-muted-foreground hover:bg-accent/40"}`}>
-              {r === "worker" ? "🛠 Работник (исполнитель)" : "📋 Менеджер (создаёт заказы)"}
+              className={`px-3 py-3 rounded-lg border text-sm font-medium transition ${f.role === r ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground hover:bg-muted"}`}>
+              {r === "worker" ? "Работник (исполнитель)" : "Менеджер (создаёт заказы)"}
             </button>
           ))}
         </div>
       </div>
-      <Button type="submit" disabled={saving} className="w-full rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md shadow-primary/20 h-11">{saving ? "Создание…" : "Создать сотрудника"}</Button>
+      <Button type="submit" disabled={saving} className="w-full rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium shadow-sm h-11">{saving ? "Создание…" : "Создать сотрудника"}</Button>
     </form>
   );
 }
@@ -211,9 +209,9 @@ function ChatForm({ onDone }: { onDone: () => void }) {
       e.preventDefault(); setSaving(true);
       try { await createChat({ data: { name } as any }); toast.success("Цех создан"); onDone(); }
       catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
-    }} className="space-y-4">
-      <div className="space-y-1.5"><Label className="text-xs font-semibold">Название цеха или отдела</Label><Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Например: Цех сборки №1" className="rounded-xl border-primary/30 bg-background/60" /></div>
-      <Button type="submit" disabled={saving} className="w-full rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md shadow-primary/20 h-11">{saving ? "Создание…" : "Создать цех"}</Button>
+    }}       className="space-y-4">
+      <div className="space-y-1.5"><Label className="text-sm font-medium">Название цеха или отдела</Label><Input required value={name} onChange={(e) => setName(e.target.value)} placeholder="Например: Цех сборки №1" className="h-11 rounded-lg border-border" /></div>
+      <Button type="submit" disabled={saving} className="w-full rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium shadow-sm h-11">{saving ? "Создание…" : "Создать цех"}</Button>
     </form>
   );
 }
@@ -228,17 +226,17 @@ function MembersForm({ chat, workers, initial, onDone }: { chat: Chat; workers: 
       try { await setChatMembers({ data: { chat_id: chat.id, member_ids: Array.from(sel) } as any }); toast.success("Состав сохранён"); onDone(); }
       catch (e: any) { toast.error(e.message); } finally { setSaving(false); }
     }} className="space-y-4">
-      <div className="space-y-2 max-h-72 overflow-y-auto pr-1 soft-scrollbar">
+      <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1 soft-scrollbar">
         {workers.filter((w) => w.role === "worker").map((w) => (
-          <label key={w.id} className="flex items-center gap-3 border border-primary/20 rounded-xl bg-background/50 hover:bg-primary/10 px-3.5 py-2.5 cursor-pointer transition">
+          <label key={w.id} className="flex items-center gap-3 border border-border rounded-xl bg-card hover:bg-muted/50 px-3.5 py-2.5 cursor-pointer transition">
             <Checkbox checked={sel.has(w.id)} onCheckedChange={() => toggle(w.id)} />
-            <div><div className="text-sm font-bold text-foreground">{w.display_name}</div><div className="text-xs text-muted-foreground font-mono">{w.username}</div></div>
+            <div className="min-w-0"><div className="text-sm font-medium text-foreground truncate">{w.display_name}</div><div className="text-xs text-muted-foreground font-mono truncate">{w.username}</div></div>
           </label>
         ))}
-        {workers.filter((w) => w.role === "worker").length === 0 && <div className="text-sm text-muted-foreground text-center py-6 italic">Сначала добавьте работников на вкладке сотрудников</div>}
+        {workers.filter((w) => w.role === "worker").length === 0 && <div className="text-sm text-muted-foreground text-center py-6">Сначала добавьте работников на вкладке сотрудников</div>}
       </div>
 
-      <Button type="submit" disabled={saving} className="w-full rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-md shadow-primary/20 h-11">{saving ? "Сохранение…" : "Сохранить состав цеха"}</Button>
+      <Button type="submit" disabled={saving} className="w-full rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium shadow-sm h-11">{saving ? "Сохранение…" : "Сохранить состав цеха"}</Button>
     </form>
   );
 }

@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { toast } from "sonner";
 import { Lock, UserRound } from "lucide-react";
 
-const LOGIN_DOMAIN = "orderflow.local";
+const LOGIN_DOMAIN = "nerva.ai";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Вход — Nerva" }] }),
@@ -22,33 +22,30 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background p-4 text-foreground flex items-center justify-center font-sans">
-      {/* Ambient Soft Glow Background */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-500/5 dark:bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="relative z-10 w-full max-w-md">
-        <div className="text-center mb-6 space-y-2">
-          <div className="inline-flex items-center justify-center size-12 rounded-2xl bg-slate-900 text-white dark:bg-emerald-500 dark:text-slate-950 font-bold text-xl shadow-lg ring-1 ring-white/10 mb-2">
+    <div className="min-h-[100dvh] bg-background p-4 pb-8 text-foreground flex items-center justify-center">
+      <div className="w-full max-w-md">
+        <div className="text-center mb-8 space-y-2">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-xl">
             N
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Nerva Enterprise</h1>
-          <p className="text-xs text-muted-foreground">Система управления производством и заказами</p>
+          <p className="text-sm text-muted-foreground">Система управления производством и заказами</p>
         </div>
 
-        <Card className="border border-border bg-card/95 shadow-xl rounded-2xl overflow-hidden backdrop-blur-xl">
-          <CardHeader className="space-y-1.5 p-6 pb-4 border-b border-border/60">
+        <Card className="border-border shadow-lg">
+          <CardHeader className="space-y-1.5 p-6 pb-4 border-b border-border">
             <CardTitle className="text-lg font-semibold text-foreground">Вход в систему</CardTitle>
-            <CardDescription className="text-xs text-muted-foreground">
+            <CardDescription className="text-sm text-muted-foreground">
               Введите данные вашей учётной записи для авторизации
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-6 pt-4">
+          <CardContent className="p-6 pt-5">
             <LoginForm />
           </CardContent>
         </Card>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Nerva Systems. Защищенный корпоративный доступ.
+          © {new Date().getFullYear()} Nerva Systems. Защищённый корпоративный доступ.
         </p>
       </div>
     </div>
@@ -82,22 +79,22 @@ function LoginForm() {
     }
   };
   return (
-    <form onSubmit={onSubmit} className="space-y-4 mt-2">
+    <form onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-1.5">
-        <Label className="text-xs font-medium text-foreground">Логин или Email</Label>
+        <Label className="text-sm font-medium text-foreground">Логин или Email</Label>
         <div className="relative">
           <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" required value={login} onChange={(e) => setLogin(e.target.value)} autoFocus placeholder="ivanov или email@company.ru" />
+          <Input className="pl-9 h-12 text-base rounded-lg" required value={login} onChange={(e) => setLogin(e.target.value)} autoFocus placeholder="ivanov или email@company.ru" />
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs font-medium text-foreground">Пароль</Label>
+        <Label className="text-sm font-medium text-foreground">Пароль</Label>
         <div className="relative">
           <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-9 h-10 text-xs rounded-xl bg-secondary/30 border-border focus-visible:ring-emerald-500" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Input className="pl-9 h-12 text-base rounded-lg" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
       </div>
-      <Button type="submit" className="w-full h-10 text-xs font-semibold rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-emerald-500 dark:hover:bg-emerald-600 dark:text-slate-950 shadow-sm transition-all" disabled={loading}>
+      <Button type="submit" className="w-full h-12 text-base font-semibold rounded-lg" disabled={loading}>
         {loading ? "Авторизация…" : "Войти в систему"}
       </Button>
       <p className="text-[11px] text-muted-foreground text-center pt-1">Учётные записи сотрудников создаются владельцем в админ-панели.</p>

@@ -6,9 +6,9 @@
 @theme inline {
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  --radius: 0.625rem;
-  --radius-sm: calc(var(--radius) - 3px);
-  --radius-md: calc(var(--radius) - 1px);
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
@@ -42,65 +42,34 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --radius: 0.75rem;
+  --background: #f4f5f7;
+  --foreground: #111827;
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #111827;
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #0f172a;
+  --popover-foreground: #111827;
+  --primary: #1d2a4d;
   --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #475569;
-  --accent: #10b981;
+  --secondary: #eef0f3;
+  --secondary-foreground: #1d2a4d;
+  --muted: #eef0f3;
+  --muted-foreground: #5b6472;
+  --accent: #0e9f6e;
   --accent-foreground: #ffffff;
-  --destructive: #ef4444;
+  --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #cbd5e1;
-  --input: #cbd5e1;
-  --ring: #0f172a;
+  --border: #e2e5ea;
+  --input: #d4d8df;
+  --ring: #0e9f6e;
   --sidebar: #ffffff;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #0f172a;
+  --sidebar-foreground: #111827;
+  --sidebar-primary: #1d2a4d;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1f5f9;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: #0f172a;
-}
-
-.dark {
-  --radius: 0.625rem;
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #0f172a;
-  --primary-foreground: #ffffff;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #475569;
-  --accent: #10b981;
-  --accent-foreground: #ffffff;
-  --destructive: #f87171;
-  --destructive-foreground: #ffffff;
-  --border: #e2e8f0;
-  --input: #cbd5e1;
-  --ring: #0f172a;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #0f172a;
-  --sidebar-primary: #0f172a;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1f5f9;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #e2e8f0;
-  --sidebar-ring: #0f172a;
+  --sidebar-accent: #eef0f3;
+  --sidebar-accent-foreground: #1d2a4d;
+  --sidebar-border: #e2e5ea;
+  --sidebar-ring: #0e9f6e;
 }
 
 @layer base {
@@ -108,49 +77,34 @@
     border-color: var(--color-border);
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     min-width: 320px;
     font-family: var(--font-sans);
-    letter-spacing: -0.015em;
+    font-size: 15px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-sans);
-    font-weight: 600;
-    letter-spacing: -0.025em;
+    font-weight: 650;
+    letter-spacing: -0.02em;
   }
 
   ::selection {
-    background: rgba(16, 185, 129, 0.25);
+    background: rgba(14, 159, 110, 0.2);
     color: inherit;
   }
-}
 
-@utility glass-panel {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
-}
-
-@utility glass-nav {
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-@utility liquid-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@utility liquid-card-hover {
-  &:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.3);
+  button, [role="button"] {
+    touch-action: manipulation;
   }
 }
 
@@ -159,3 +113,14 @@
   scrollbar-color: var(--border) transparent;
 }
 
+@utility glass-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px 0 rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.1);
+}
+
+@utility liquid-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px 0 rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.1);
+}

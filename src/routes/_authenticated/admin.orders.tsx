@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/use-auth";
 import { createOrder } from "@/lib/orders.functions";
@@ -30,7 +30,7 @@ type Order = {
 
 function OrdersAdmin() {
   const { isOwner, loading } = useAuth();
-  const fileRef = React.useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [chats, setChats] = useState<{ id: string; name: string }[]>([]);
   const [assignments, setAssignments] = useState<{ order_id: string; chat_id: string; status: string; responsible_user_id: string | null }[]>([]);
@@ -89,7 +89,7 @@ function OrdersAdmin() {
   if (!isOwner) return <div className="p-8 text-muted-foreground">Только для владельца.</div>;
 
   return (
-    <div className="soft-scrollbar h-full overflow-auto p-4 sm:p-6 space-y-6">
+    <div className="soft-scrollbar h-full overflow-y-auto bg-background p-4 sm:p-6 space-y-6 pb-24 md:pb-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Заказы</h1>
@@ -103,7 +103,7 @@ function OrdersAdmin() {
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button><Plus className="size-4 mr-2" />Новый заказ</Button></DialogTrigger>
-            <DialogContent>
+            <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader><DialogTitle>Новый заказ</DialogTitle></DialogHeader>
               <NewOrderForm chats={chats} onDone={() => { setOpen(false); load(); }} />
             </DialogContent>
@@ -114,7 +114,43 @@ function OrdersAdmin() {
       <Card className="border-border/40">
         <CardHeader><CardTitle className="text-base">Список заказов</CardTitle></CardHeader>
         <CardContent className="px-2 sm:px-6">
-          <div className="overflow-x-auto">
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-3">
+            {orders.map((o) => {
+              const oa = assignments.filter(a => a.order_id === o.id && a.status !== "cancelled");
+              return (
+                <div key={o.id} className="rounded-xl border border-border bg-background p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs text-foreground">{o.number}</span>
+                    <Badge variant="outline" className={STATUS_COLOR[o.status]}>{STATUS_LABEL[o.status]}</Badge>
+                  </div>
+                  <div className="text-sm font-medium text-foreground">{o.nomenclature}</div>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                    <span>Срок: {o.finish_date ?? "—"}</span>
+                    {o.customer_order && <span>Заказ: {o.customer_order}</span>}
+                  </div>
+                  {oa.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {oa.map(a => (
+                        <span key={a.chat_id} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                          a.status === "completed" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                          a.status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                          a.status === "stalled" || a.status === "blocked" ? "bg-red-50 text-red-700 border-red-200" :
+                          "bg-amber-50 text-amber-700 border-amber-200"
+                        }`}>
+                          {chats.find(c => c.id === a.chat_id)?.name ?? "цех"}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {orders.length === 0 && <div className="text-center text-muted-foreground py-8 text-sm">Заказов пока нет</div>}
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
           <Table>
             <TableHeader><TableRow>
               <TableHead>Номер</TableHead><TableHead>Номенклатура</TableHead>
@@ -163,7 +199,7 @@ function OrdersAdmin() {
 function NewOrderForm({ chats, onDone }: { chats: { id: string; name: string }[]; onDone: () => void }) {
   const [form, setForm] = useState({ number: "", nomenclature: "", finish_date: "", chat_id: "", customer_order: "", comment: "" });
   const [saving, setSaving] = useState(false);
-  const submit = async (e: React.FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault(); setSaving(true);
     try {
       await createOrder({ data: { ...form, finish_date: form.finish_date || null, chat_id: form.chat_id || null, customer_order: form.customer_order || null, comment: form.comment || null } as any });
@@ -173,7 +209,7 @@ function NewOrderForm({ chats, onDone }: { chats: { id: string; name: string }[]
   };
   return (
     <form onSubmit={submit} className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div><Label>Номер</Label><Input required value={form.number} onChange={(e) => setForm({ ...form, number: e.target.value })} /></div>
         <div><Label>Срок (Финиш)</Label><Input type="date" value={form.finish_date} onChange={(e) => setForm({ ...form, finish_date: e.target.value })} /></div>
       </div>

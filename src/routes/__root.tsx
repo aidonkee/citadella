@@ -124,18 +124,13 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-import { NervaNeuralBg } from "@/components/NervaNeuralBg";
-
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <NervaNeuralBg />
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <div className="relative z-10">
-        <Outlet />
-      </div>
+      <Outlet />
       <Toaster richColors position="top-right" />
     </QueryClientProvider>
   );

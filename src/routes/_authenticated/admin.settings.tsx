@@ -57,32 +57,32 @@ function SettingsPage() {
   };
 
   const Row = ({ label, rt, em, onRt, onEm }: { label: string; rt: boolean; em: boolean; onRt: (v: boolean) => void; onEm: (v: boolean) => void }) => (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-4 items-center py-3 border-b border-border/40 last:border-0">
-      <div className="min-w-0 text-sm">{label}</div>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 sm:gap-4 items-center py-3 border-b border-border/40 last:border-0">
+      <div className="min-w-0 text-sm break-words">{label}</div>
       <div className="flex items-center gap-2 text-xs text-muted-foreground"><span className="hidden sm:inline">В приложении</span><Switch checked={rt} onCheckedChange={onRt} /></div>
       <div className="flex items-center gap-2 text-xs text-muted-foreground"><span className="hidden sm:inline">Email</span><Switch checked={em} onCheckedChange={onEm} /></div>
     </div>
   );
 
   return (
-    <div className="soft-scrollbar h-full overflow-y-auto p-4 sm:p-6">
-      <div className="max-w-3xl mx-auto space-y-5">
+    <div className="soft-scrollbar h-full overflow-y-auto bg-background p-4 sm:p-6 space-y-4 sm:space-y-5 pb-24 md:pb-6">
+      <div className="max-w-3xl mx-auto space-y-4 sm:space-y-5">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold">Уведомления владельца</h1>
+          <h1 className="text-lg sm:text-xl font-semibold">Уведомления владельца</h1>
           <p className="text-sm text-muted-foreground">Выберите, какие события показывать в приложении (realtime) и/или отправлять на email.</p>
         </div>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">Email для уведомлений</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base font-semibold">Email для уведомлений</CardTitle></CardHeader>
           <CardContent>
-            <Label className="text-xs text-muted-foreground">Адрес</Label>
-            <Input value={s.email_address ?? ""} onChange={(e) => set("email_address", e.target.value || null)} placeholder="owner@example.com" />
+            <Label className="text-sm font-medium">Адрес</Label>
+            <Input value={s.email_address ?? ""} onChange={(e) => set("email_address", e.target.value || null)} placeholder="owner@example.com" className="h-11 rounded-lg" />
             <p className="text-xs text-muted-foreground mt-2">Email-рассылка требует настроенного email-домена проекта.</p>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-base">События</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base font-semibold">События</CardTitle></CardHeader>
           <CardContent className="divide-y divide-border/40">
             <Row label="Смена статуса заказа" rt={s.realtime_status_changes} em={s.email_status_changes}
               onRt={(v) => set("realtime_status_changes", v)} onEm={(v) => set("email_status_changes", v)} />
@@ -94,7 +94,7 @@ function SettingsPage() {
         </Card>
 
         <div className="flex justify-end">
-          <Button onClick={save} disabled={saving}>{saving ? "Сохраняем…" : "Сохранить"}</Button>
+          <Button onClick={save} disabled={saving} className="w-full sm:w-auto h-11 rounded-lg shadow-sm">{saving ? "Сохраняем…" : "Сохранить"}</Button>
         </div>
       </div>
     </div>
