@@ -7,4 +7,13 @@ export default defineConfig({
   nitro: {
     preset: "vercel",
   },
+  vite: {
+    environments: {
+      nitro: {
+        build: {
+          outDir: ".vercel/output/functions/__server.func",
+        },
+      },
+    },
+  },
 });
