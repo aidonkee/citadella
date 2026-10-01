@@ -56,6 +56,16 @@ for (const p of pkgs) {
 }
 console.log("[patch-serverfn] copied packages:", pkgs.join(", "));
 
+// allow long-running server functions (voice STT + AI queries can take 30-60s)
+const vcCfg = join(funcDir, ".vc-config.json");
+if (existsSync(vcCfg)) {
+  const vcJson = JSON.parse(readFileSync(vcCfg, "utf8"));
+  vcJson.maxDuration = 60;
+  delete vcJson.shouldAddHelpers;
+  writeFileSync(vcCfg, JSON.stringify(vcJson, null, 2) + "\n", "utf8");
+  console.log("[patch-serverfn] .vc-config.json: maxDuration=60");
+}
+
 // base64-arraybuffer is required by supabase storage but not installed here — provide a faithful tiny impl
 const b64 = join(dest, "base64-arraybuffer");
 rmSync(b64, { recursive: true, force: true });

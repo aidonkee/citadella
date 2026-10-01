@@ -64,18 +64,34 @@ export const transcribeAudio = createServerFn({ method: "POST" })
       let mimeType = data.mime.split(";")[0].trim();
       if (!mimeType || mimeType === "unknown") mimeType = "audio/webm";
       
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { inlineData: { mimeType: mimeType, data: data.audio_base64 } },
-              { text: "Расшифруй эту аудиозапись. Верни ТОЛЬКО текст того, что сказано голосом, без кавычек, комментариев и префиксов. Если слова разобрать невозможно или на записи тишина, верни пустую строку." }
-            ]
-          }]
-        })
+      const sttBody = JSON.stringify({
+        contents: [{
+          parts: [
+            { inlineData: { mimeType: mimeType, data: data.audio_base64 } },
+            { text: "Расшифруй эту аудиозапись. Верни ТОЛЬКО текст того, что сказано голосом, без кавычек, комментариев и префиксов. Если слова разобрать невозможно или на записи тишина, верни пустую строку." }
+          ]
+        }]
       });
+      const sttUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`;
+      let res = await fetch(sttUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: sttBody });
+
+      if (res.status === 429 || res.status === 503 || res.status >= 500) {
+        let delayMs = 20000;
+        try {
+          const ej = await res.clone().json() as {
+            error?: { details?: Array<{ "@type"?: string; retryDelay?: string }> };
+          };
+          const retry = ej.error?.details?.find((d) => d?.["@type"]?.includes("RetryInfo"));
+          if (retry?.retryDelay && retry.retryDelay.endsWith("s")) {
+            delayMs = Math.max(2000, Math.min(parseFloat(retry.retryDelay) * 1000, 25000));
+          }
+        } catch {
+          // keep default delay
+        }
+        console.log("Gemini STT retryable status", res.status, "retry in", delayMs, "ms");
+        await new Promise((r) => setTimeout(r, delayMs));
+        res = await fetch(sttUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: sttBody });
+      }
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
